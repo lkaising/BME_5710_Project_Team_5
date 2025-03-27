@@ -6,13 +6,13 @@ for processing MRI image pairs.
 """
 
 import os
-import numpy as np
-import torch
+# import numpy as np
+# import torch
 from torch.utils.data import Dataset, DataLoader
 from torchvision import transforms
-import glob
+# import glob
 from PIL import Image
-import random
+# import random
 
 
 class MRIDataset(Dataset):
@@ -116,3 +116,26 @@ def _get_image_paths_from_split(split_dir):
     lr_paths = [os.path.join(lr_dir, f) for f in filenames]
     
     return lr_paths, hr_paths
+
+if __name__ == "__main__":
+    print("Testing MRI dataset and dataloader functionality...")
+    
+    data_dir = "data"
+    train_loader, val_loader = create_dataloaders(
+        data_dir=data_dir,
+        batch_size=4,
+        num_workers=0
+    )
+    
+    print(f"Number of training batches: {len(train_loader)}")
+    print(f"Number of validation batches: {len(val_loader)}")
+    
+    lr_sample, hr_sample = next(iter(train_loader))
+
+    print(f"Low-resolution batch shape: {lr_sample.shape}")
+    print(f"High-resolution batch shape: {hr_sample.shape}")
+
+    print(f"Low-resolution min/max values: {lr_sample.min():.3f}/{lr_sample.max():.3f}")
+    print(f"High-resolution min/max values: {hr_sample.min():.3f}/{hr_sample.max():.3f}")
+    
+    print("Dataset test completed successfully!")
