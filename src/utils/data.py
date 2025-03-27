@@ -117,6 +117,7 @@ def _get_image_paths_from_split(split_dir):
     
     return lr_paths, hr_paths
 
+
 if __name__ == "__main__":
     """Test MRIDataset and dataloader functionality."""
     script_dir = os.path.dirname(os.path.abspath(__file__))
