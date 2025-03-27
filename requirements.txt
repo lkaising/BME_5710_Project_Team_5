@@ -1,0 +1,27 @@
+# Core dependencies
+numpy>=1.20.0
+torch>=1.10.0
+torchvision>=0.11.0
+Pillow>=9.0.0
+
+# Data processing
+tqdm>=4.62.0
+PyYAML>=6.0
+
+# Visualization
+matplotlib>=3.5.0
+
+# Optional: for improved image processing
+scikit-image>=0.19.0
+
+# Training utilities
+tensorboard>=2.8.0
+
+# Metrics calculation
+scipy>=1.8.0  # For SSIM implementation
+
+# Command line argument parsing
+argparse>=1.4.0
+
+# File path handling
+pathlib>=1.0.1
