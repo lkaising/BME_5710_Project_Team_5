@@ -6,13 +6,9 @@ for processing MRI image pairs.
 """
 
 import os
-# import numpy as np
-# import torch
 from torch.utils.data import Dataset, DataLoader
 from torchvision import transforms
-# import glob
 from PIL import Image
-# import random
 
 
 class MRIDataset(Dataset):
@@ -118,24 +114,33 @@ def _get_image_paths_from_split(split_dir):
     return lr_paths, hr_paths
 
 if __name__ == "__main__":
-    print("Testing MRI dataset and dataloader functionality...")
+    """Test MRIDataset and dataloader functionality."""
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    project_root = os.path.dirname(os.path.dirname(script_dir))
+    data_dir = os.path.join(project_root, "data")
     
-    data_dir = "data"
+    print("\n" + "="*50)
+    print(f"MRI DATASET TEST")
+    print("="*50)
+    print(f"Data directory: {data_dir}")
+    print("-"*50)
+
     train_loader, val_loader = create_dataloaders(
         data_dir=data_dir,
         batch_size=4,
         num_workers=0
     )
     
-    print(f"Number of training batches: {len(train_loader)}")
-    print(f"Number of validation batches: {len(val_loader)}")
+    print(f"Dataset statistics:")
+    print(f"  • Training batches: {len(train_loader)}")
+    print(f"  • Validation batches: {len(val_loader)}")
     
     lr_sample, hr_sample = next(iter(train_loader))
-
-    print(f"Low-resolution batch shape: {lr_sample.shape}")
-    print(f"High-resolution batch shape: {hr_sample.shape}")
-
-    print(f"Low-resolution min/max values: {lr_sample.min():.3f}/{lr_sample.max():.3f}")
-    print(f"High-resolution min/max values: {hr_sample.min():.3f}/{hr_sample.max():.3f}")
+    print("\nSample batch:")
+    print(f"  • Shapes - LR: {lr_sample.shape}, HR: {hr_sample.shape}")
+    print(f"  • Value ranges - ")
+    print(f"    • LR: [{lr_sample.min():.3f}, {lr_sample.max():.3f}]")
+    print(f"    • HR: [{hr_sample.min():.3f}, {hr_sample.max():.3f}]")
     
-    print("Dataset test completed successfully!")
+    print("\nDataset test completed successfully!")
+    print("="*50 + "\n")
