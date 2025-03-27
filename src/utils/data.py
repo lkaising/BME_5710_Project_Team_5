@@ -43,8 +43,12 @@ class MRIDataset(Dataset):
         lr_img = Image.open(self.lr_paths[idx])
         hr_img = Image.open(self.hr_paths[idx])
 
-        lr_img = lr_img.resize((128, 128), Image.BICUBIC)
+        def ensure_size(img, target_size):
+            return img if img.size == target_size else img.resize(target_size, Image.BICUBIC)
         
+        lr_img = ensure_size(lr_img, (128, 128))
+        hr_img = ensure_size(hr_img, (256, 256))
+
         if self.transform:
             lr_img = self.transform(lr_img)
             hr_img = self.transform(hr_img)
