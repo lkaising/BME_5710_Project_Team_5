@@ -65,8 +65,8 @@ def calculate_ssim(img1, img2, data_range=None):
     Calculate Structural Similarity Index between two images.
     
     Args:
-        img1 (torch.Tensor): First image.
-        img2 (torch.Tensor): Second image.
+        img1 (torch.Tensor or np.ndarray): First image.
+        img2 (torch.Tensor or np.ndarray): Second image.
         data_range (float, optional): Data range of the images. If None, computed
                                       from the ground truth image.
         
