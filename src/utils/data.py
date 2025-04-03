@@ -118,7 +118,7 @@ def _get_image_paths_from_split(split_dir):
     return lr_paths, hr_paths
 
 
-if __name__ == "__main__":
+def main():
     """Test MRIDataset and dataloader functionality."""
     script_dir = os.path.dirname(os.path.abspath(__file__))
     project_root = os.path.dirname(os.path.dirname(script_dir))
@@ -141,6 +141,7 @@ if __name__ == "__main__":
     print(f"  • Validation batches: {len(val_loader)}")
     
     lr_sample, hr_sample = next(iter(train_loader))
+
     print("\nSample batch:")
     print(f"  • Shapes - LR: {lr_sample.shape}, HR: {hr_sample.shape}")
     print(f"  • Value ranges - ")
@@ -149,3 +150,7 @@ if __name__ == "__main__":
     
     print("\nDataset test completed successfully!")
     print("="*50 + "\n")
+
+
+if __name__ == "__main__":
+    main()

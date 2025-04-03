@@ -5,13 +5,13 @@ This module provides functions for calculating various image quality metrics
 including PSNR, SSIM, and others.
 """
 
-import numpy as np
 import torch
+import numpy
 from torchmetrics.image.psnr import PeakSignalNoiseRatio
 from torchmetrics.image.ssim import StructuralSimilarityIndexMeasure
 
 
-def _prepare_image(img) -> torch.Tensor:
+def _prepare_image(img):
     """
     Convert input image to a torch.Tensor with proper dimensions and type.
         
@@ -21,7 +21,7 @@ def _prepare_image(img) -> torch.Tensor:
     Returns:
         torch.Tensor: Prepared image tensor.
     """
-    if isinstance(img, np.ndarray):
+    if isinstance(img, numpy.ndarray):
         img = torch.from_numpy(img)
     img = img.float()
     
@@ -38,11 +38,13 @@ def calculate_psnr(img1, img2, data_range=None):
     Calculate Peak Signal-to-Noise Ratio between two images.
     
     Args:
-        img1 (torch.Tensor or np.ndarray): First image
-        img2 (torch.Tensor or np.ndarray): Second image
+        img1 (torch.Tensor or np.ndarray): First image.
+        img2 (torch.Tensor or np.ndarray): Second image.
+        data_range (float, optional): Data range of the images. If None, computed 
+                                      from the ground truth image.
         
     Returns:
-        float: PSNR value in dB
+        float: PSNR value in dB.
     """
     img1 = _prepare_image(img1)
     img2 = _prepare_image(img2)
@@ -63,13 +65,13 @@ def calculate_ssim(img1, img2, data_range=None):
     Calculate Structural Similarity Index between two images.
     
     Args:
-        img1 (torch.Tensor): First image
-        img2 (torch.Tensor): Second image
-        data_range (float, optional): Data range of the images. If None, computed from the ground 
-                                      truth image.
+        img1 (torch.Tensor): First image.
+        img2 (torch.Tensor): Second image.
+        data_range (float, optional): Data range of the images. If None, computed
+                                      from the ground truth image.
         
     Returns:
-        float: SSIM value
+        float: SSIM value.
     """
     img1 = _prepare_image(img1)
     img2 = _prepare_image(img2)
@@ -90,29 +92,29 @@ def evaluate_metrics(sr_images, hr_images):
     Calculate multiple metrics for a batch of images.
     
     Args:
-        sr_images (torch.Tensor): Super-resolution images
-        hr_images (torch.Tensor): High-resolution ground truth images
+        sr_images (torch.Tensor): Super-resolution images.
+        hr_images (torch.Tensor): High-resolution ground truth images.
         
     Returns:
-        dict: Dictionary containing metric values
+        dict: Dictionary containing metric values.
     """
-    # Implementation will go here
+    # TODO: Implement this function
     pass
 
 
-if __name__ == "__main__":
+def main():
     """Test PSNR and SSIM calculations on all validation samples."""
     import os
     import torch.nn.functional as F
-    from data import _get_image_paths_from_split, MRIDataset
     from torchvision import transforms
+    from data import _get_image_paths_from_split, MRIDataset
     
     script_dir = os.path.dirname(os.path.abspath(__file__))
     project_root = os.path.dirname(os.path.dirname(script_dir))
     data_dir = os.path.join(project_root, "data")
     
     print("\n" + "="*50)
-    print(f"INTERPOLATED IMAGE QUALITY METRICS TEST")
+    print("INTERPOLATED IMAGE QUALITY METRICS TEST")
     print("="*50)
     print(f"Data directory: {data_dir}")
     print("-"*50)
@@ -141,8 +143,8 @@ if __name__ == "__main__":
             align_corners=False
         )
         
-        psnr_value = calculate_psnr(lr_img_up, hr_img)
-        ssim_value = calculate_ssim(lr_img_up, hr_img)
+        psnr_value = calculate_psnr(lr_img_up, hr_img.unsqueeze(0))
+        ssim_value = calculate_ssim(lr_img_up, hr_img.unsqueeze(0))
         
         total_psnr += psnr_value
         total_ssim += ssim_value
@@ -156,3 +158,7 @@ if __name__ == "__main__":
     
     print("\nMetrics calculation test completed!")
     print("="*50 + "\n")
+
+
+if __name__ == "__main__":
+    main()
