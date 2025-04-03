@@ -12,7 +12,7 @@ from torchmetrics.image.psnr import PeakSignalNoiseRatio
 from torchmetrics.image.ssim import StructuralSimilarityIndexMeasure
 
 
-def calculate_psnr(img1, img2):
+def calculate_psnr(img1, img2, data_range=None):
     """
     Calculate Peak Signal-to-Noise Ratio between two images.
     
@@ -33,35 +33,69 @@ def calculate_psnr(img1, img2):
     if not img2.is_floating_point():
         img2 = img2.float()
     
-    assert img1.shape == img2.shape, f"Images must have the same shape: {img1.shape} vs {img2.shape}"
-    
     if img1.dim() == 2:
         img1 = img1.unsqueeze(0).unsqueeze(0)
+    if img2.dim() == 2:
         img2 = img2.unsqueeze(0).unsqueeze(0)
-    elif img1.dim() == 3:
+
+    if img1.dim() == 3:
         img1 = img1.unsqueeze(0)
+    if img2.dim() == 3:
         img2 = img2.unsqueeze(0)
+
+    assert img1.shape == img2.shape, f"Images must have the same shape: {img1.shape} vs {img2.shape}"
+
+    if data_range is None:
+        data_range = img2.max() - img2.min()
     
-    psnr_metric = PeakSignalNoiseRatio()
+    psnr_metric = PeakSignalNoiseRatio(data_range=data_range)
     psnr_metric = psnr_metric.to(img1.device)
 
     return psnr_metric(img1, img2).item()
 
 
-def calculate_ssim(img1, img2, window_size=11):
+def calculate_ssim(img1, img2, data_range=None):
     """
     Calculate Structural Similarity Index between two images.
     
     Args:
         img1 (torch.Tensor): First image
         img2 (torch.Tensor): Second image
-        window_size (int): Size of the SSIM window
+        data_range (float, optional): Data range of the images. If None, computed from the ground 
+                                      truth image.
         
     Returns:
         float: SSIM value
     """
-    # Implementation will go here
-    pass
+    if isinstance(img1, np.ndarray):
+        img1 = torch.from_numpy(img1).float()
+    if isinstance(img2, np.ndarray):
+        img2 = torch.from_numpy(img2).float()
+
+    if not img1.is_floating_point():
+        img1 = img1.float()
+    if not img2.is_floating_point():
+        img2 = img2.float()
+    
+    if img1.dim() == 2:
+        img1 = img1.unsqueeze(0).unsqueeze(0)
+    if img2.dim() == 2:
+        img2 = img2.unsqueeze(0).unsqueeze(0)
+
+    if img1.dim() == 3:
+        img1 = img1.unsqueeze(0)
+    if img2.dim() == 3:
+        img2 = img2.unsqueeze(0)
+
+    assert img1.shape == img2.shape, f"Images must have the same shape: {img1.shape} vs {img2.shape}"
+
+    if data_range is None:
+        data_range = img2.max() - img2.min()
+
+    ssim_metric = StructuralSimilarityIndexMeasure(data_range=data_range)
+    ssim_metric = ssim_metric.to(img1.device)
+
+    return ssim_metric(img1, img2).item()
 
 
 def evaluate_metrics(sr_images, hr_images):
@@ -80,7 +114,7 @@ def evaluate_metrics(sr_images, hr_images):
 
 
 if __name__ == "__main__":
-    """Test PSNR calculation on sample data."""
+    """Test PSNR calculation on all validation samples."""
     import os
     from data import _get_image_paths_from_split, MRIDataset
     from torchvision import transforms
@@ -96,6 +130,7 @@ if __name__ == "__main__":
     print("-"*50)
     
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    print(f"Using device: {device}")
     
     transform = transforms.Compose([
         transforms.ToTensor()
@@ -104,34 +139,30 @@ if __name__ == "__main__":
     val_dir = os.path.join(data_dir, 'val')
     lr_paths, hr_paths = _get_image_paths_from_split(val_dir)
     val_dataset = MRIDataset(lr_paths, hr_paths, transform=transform)
+    
     psnr_metric = PeakSignalNoiseRatio().to(device)
-    num_test_samples = min(5, len(val_dataset))
+    total_psnr_function = 0.0
+    total_samples = len(val_dataset)
     
-    print(f"\nTesting PSNR calculation on {num_test_samples} validation samples:")
     
-    for i in range(num_test_samples):
+    for i in range(total_samples):
         lr_img, hr_img = val_dataset[i]
         lr_img, hr_img = lr_img.to(device), hr_img.to(device)
         
-        # Upsample low-res image using bicubic interpolation
         lr_img_up = F.interpolate(
             lr_img.unsqueeze(0), 
             scale_factor=2, 
             mode='bicubic', 
             align_corners=False
         )
-        hr_img = hr_img.unsqueeze(0)  # Add batch dimension
         
-        # Calculate PSNR using our function
         psnr_value = calculate_psnr(lr_img_up, hr_img)
         
-        # Calculate PSNR using torchmetrics directly for verification
-        psnr_direct = psnr_metric(lr_img_up, hr_img).item()
-        
-        print(f"  Sample {i+1}:")
-        print(f"    • PSNR (our function): {psnr_value:.2f} dB")
-        print(f"    • PSNR (direct): {psnr_direct:.2f} dB")
-
+        total_psnr_function += psnr_value
     
-    print("\nPSNR calculation test completed!")
+    avg_psnr_function = total_psnr_function / total_samples
+    
+    print(f"\nAverage PSNR results:")
+    print(f"  • TOFDO UPDATE: {avg_psnr_function:.2f} dB")
+    
     print("="*50 + "\n")
