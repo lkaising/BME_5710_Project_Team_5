@@ -63,8 +63,8 @@ def create_dataloaders(data_dir, batch_size=8, num_workers=4):
     
     Args:
         data_dir (str): Root directory containing train and val folders.
-        batch_size (int): Batch size for training.
-        num_workers (int): Number of workers for data loading.
+        batch_size (int, optional): Batch size for training. Defaults to 8.
+        num_workers (int, optional): Number of workers for data loading. Defaults to 4.
         
     Returns:
         tuple: (train_loader, val_loader).
