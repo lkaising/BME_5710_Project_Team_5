@@ -2,7 +2,7 @@
 Data utilities for MRI super-resolution.
 
 This module provides dataset classes and data loading utilities
-for processing MRI image pairs.
+for processing MRI image pairs with configurable transformations.
 """
 
 
@@ -11,10 +11,89 @@ import random
 from PIL import Image
 import numpy as np
 import torch
+import yaml
 from torch.utils.data import DataLoader, Dataset
 import torchvision.transforms as transforms
 import albumentations as A
 from albumentations.pytorch import ToTensorV2
+
+
+def read_transform_config(config_path=None, *, section):
+    """
+    Reads transformation configuration from a YAML file.
+    Args:
+        ...
+            
+    Returns:
+        ...
+    """
+    with open(config_path, 'r') as file:
+        cfg = yaml.safe_load(file)
+
+    global_transforms = cfg.get("transforms", {})
+
+    if section not in cfg:
+        raise ValueError(f"Section '{section}' not found in the configuration.")
+    
+    section_config = cfg[section]
+    apply_transforms = section_config.get("apply_transforms", True)
+    section_transforms = section_config.get("transforms") or {}
+
+    combined_transforms = global_transforms.copy()
+    combined_transforms.update(section_transforms)
+
+    return {"apply_transforms": apply_transforms, "transforms": combined_transforms}
+
+
+def create_transforms_from_config(config):
+    """
+    Creates Albumentations transforms based on the provided configuration.
+    
+    Args:
+        config (dict): Configuration dictionary with transform settings.
+        
+    Returns:
+        A.Compose: Composed transformations or None if transforms are disabled.
+    """
+    if not config.get('apply_transforms', True):
+        return None
+        
+    transforms_list = []
+    transforms_config = config.get('transforms', {})
+    
+    if transforms_config.get('horizontal_flip', {}).get('enabled', False):
+        p = transforms_config.get('horizontal_flip', {}).get('p', 0.5)
+        transforms_list.append(A.HorizontalFlip(p=p))
+    
+    if transforms_config.get('vertical_flip', {}).get('enabled', False):
+        p = transforms_config.get('vertical_flip', {}).get('p', 0.5)
+        transforms_list.append(A.VerticalFlip(p=p))
+    
+    if transforms_config.get('rotate', {}).get('enabled', False):
+        limit = transforms_config.get('rotate', {}).get('limit', 15)
+        p = transforms_config.get('rotate', {}).get('p', 0.5)
+        transforms_list.append(A.Rotate(limit=limit, p=p))
+    
+    if transforms_config.get('elastic_transform', {}).get('enabled', False):
+        alpha = transforms_config.get('elastic_transform', {}).get('alpha', 1.0)
+        sigma = transforms_config.get('elastic_transform', {}).get('sigma', 50.0)
+        alpha_affine = transforms_config.get('elastic_transform', {}).get('alpha_affine', 50.0)
+        p = transforms_config.get('elastic_transform', {}).get('p', 0.5)
+        transforms_list.append(A.ElasticTransform(alpha=alpha, sigma=sigma, alpha_affine=alpha_affine, p=p))
+    
+    if transforms_config.get('gauss_noise', {}).get('enabled', False):
+        var_limit = transforms_config.get('gauss_noise', {}).get('var_limit', [0.001, 0.01])
+        p = transforms_config.get('gauss_noise', {}).get('p', 0.3)
+        transforms_list.append(A.GaussNoise(var_limit=tuple(var_limit), p=p))
+    
+    if transforms_config.get('normalize', {}).get('enabled', True):
+        mean = transforms_config.get('normalize', {}).get('mean', [0.5])
+        std = transforms_config.get('normalize', {}).get('std', [0.5])
+        transforms_list.append(A.Normalize(mean=tuple(mean), std=tuple(std)))
+    
+    transforms_list.append(ToTensorV2())
+    
+    return A.Compose(transforms_list) if transforms_list else None
 
 
 class _PairTransform:
@@ -22,18 +101,18 @@ class _PairTransform:
     Applies the same transformations to both low-res and high-res images.
 
     Attributes:
-        transforms (Callable): ...
+        transforms (Callable): Albumentations transforms to apply to images.
     """
 
-    def __init__(self, transforms=None, normalize=True):
+    def __init__(self, transforms=None):
         """
         Initializes the transform.
 
         Args:
-            transforms (Callable, optional): ...
+            transforms (Callable, optional): Albumentations transforms to apply.
+            normalize (bool, optional): Whether to normalize when no transforms are applied.
         """
         self.transforms = transforms
-        self.normalize = normalize
 
     def __call__(self, lr_img, hr_img):
         """
@@ -46,9 +125,8 @@ class _PairTransform:
         Returns:
             Tuple[Tensor, Tensor]: Transformed (lr_tensor, hr_tensor).
         """
-        seed = random.randint(0, 2**32) if self.transforms else None
-
-        if self.transforms and seed is not None:
+        if self.transforms:
+            seed = random.randint(0, 2**32) 
             random.seed(seed)
             lr_tensor = self.transforms(image=np.array(lr_img))['image']
             random.seed(seed)
@@ -120,7 +198,7 @@ class _MRIDataset(Dataset):
         return lr_img, hr_img
 
 
-def create_dataloaders(data_dir, loaders_to_create='both', batch_size=8, num_workers=4):
+def create_dataloaders(data_dir, loaders_to_create='both', batch_size=8, num_workers=4, config_path=None):
     """
     Creates train and/or validation data loaders from directory structure.
 
@@ -130,6 +208,7 @@ def create_dataloaders(data_dir, loaders_to_create='both', batch_size=8, num_wor
             'train', 'val', or 'both'. Defaults to 'both'.
         batch_size (int, optional): Batch size for loading data. Defaults to 8.
         num_workers (int, optional): Number of subprocesses for data loading. Defaults to 4.
+        config_path (str, optional): Path to YAML configuration file. Defaults to None.
 
     Returns:
         tuple or DataLoader: 
@@ -140,36 +219,27 @@ def create_dataloaders(data_dir, loaders_to_create='both', batch_size=8, num_wor
     Raises:
         ValueError: If loaders_to_create is not one of 'train', 'val', or 'both'.
     """
-    albumentations_transform = A.Compose([
-        A.HorizontalFlip(p=0.5),
-        A.VerticalFlip(p=0.5),
-        A.Rotate(limit=15, p=0.5),
-        A.ElasticTransform(alpha=1.0, sigma=50.0, alpha_affine=50.0, p=0.5),
-        A.GaussNoise(var_limit=(0.001, 0.01), p=0.3),
-        A.Normalize(mean=(0.5,), std=(0.5,)),
-        ToTensorV2()
-    ])
-
-    train_transform = _PairTransform(
-        transforms=albumentations_transform
-    )
-
-    val_transform = _PairTransform(
-        transforms=None
-    )
-
     loaders = {}
     if loaders_to_create in ['train', 'both']:
+        train_transform_config = read_transform_config(config_path, section='train')
+        train_transforms = create_transforms_from_config(train_transform_config)
+        train_transform = _PairTransform(transforms=train_transforms)
         loaders['train'] = _create_dataloader_from_dir(
             os.path.join(data_dir, 'train'),
             batch_size, num_workers, train_transform, shuffle=True
         )
 
     if loaders_to_create in ['val', 'both']:
+        val_transform_config = read_transform_config(config_path, section='val')
+        val_transforms = create_transforms_from_config(val_transform_config)
+        val_transform = _PairTransform(transforms=val_transforms)
         loaders['val'] = _create_dataloader_from_dir(
             os.path.join(data_dir, 'val'),
             batch_size, num_workers, val_transform, shuffle=False
         )
+
+    if loaders_to_create not in ['train', 'val', 'both']:
+        raise ValueError(f"loaders_to_create must be one of 'train', 'val', or 'both', got {loaders_to_create}")
 
     return_mapping = {
         'both': lambda: (loaders['train'], loaders['val']),
@@ -246,6 +316,7 @@ if __name__ == "__main__":
     script_dir = os.path.dirname(os.path.abspath(__file__))
     project_root = os.path.dirname(os.path.dirname(script_dir))
     data_dir = os.path.join(project_root, "data")
+    config_path = os.path.join(project_root, "configs", "transforms.yaml")
     
     print("\n" + "="*50)
     print("MRI DATASET TEST")
@@ -256,10 +327,11 @@ if __name__ == "__main__":
     train_loader, val_loader = create_dataloaders(
         data_dir=data_dir,
         batch_size=4,
-        num_workers=0
+        num_workers=0,
+        config_path=config_path
     )
-    
-    print("Dataset statistics:")
+
+    print("\nDataset statistics:")
     print(f"  • Training batches: {len(train_loader)}")
     print(f"  • Validation batches: {len(val_loader)}")
     
