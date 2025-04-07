@@ -95,3 +95,8 @@ See `requirements.txt` for the complete list of dependencies and version require
 ## Note
 
 Some function implementations in the codebase are marked with `pass` and need to be completed before running the scripts.
+
+Windows:
+Set-ExecutionPolicy -ExecutionPolicy Bypass -Scope Process
+.\venv\Scripts\Activate.ps1
+
