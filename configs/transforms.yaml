@@ -3,13 +3,13 @@
 # Global transforms (apply to both train and val unless overridden)
 transforms:
   normalize:
-    enabled: true
+    enabled: false
     mean: [0.5]
     std: [0.5]
 
 # Training-specific configuration
 train:
-  apply_transforms: true  
+  apply_transforms: true
   transforms:
     horizontal_flip:
       enabled: true
@@ -22,15 +22,15 @@ train:
       limit: 15
       p: 0.5
     elastic_transform:
-      enabled: true
+      enabled: false
       alpha: 1.0
       sigma: 50.0
       alpha_affine: 50.0
-      p: 0.5
+      p: 1
     gauss_noise:
       enabled: true
-      var_limit: [0.001, 0.01]
-      p: 0.3
+      var_limit: [0.0001, 0.002]
+      p: 0.5
 
 # Validation-specific configuration
 val:
