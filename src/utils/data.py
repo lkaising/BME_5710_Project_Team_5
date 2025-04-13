@@ -4,25 +4,12 @@ This module provides dataset classes and data loading utilities
 for processing MRI image pairs with configurable transformations.
 """
 
-# import os
-# import random
-# from pathlib import Path
-# from typing import Callable, Dict, List, Optional, Tuple, Union
-# import albumentations as A
-# import numpy as np
-# import torchvision.transforms as transforms
-# import yaml
-# from albumentations.pytorch import ToTensorV2
-# from PIL import Image
-# from torch.utils.data import DataLoader, Dataset
-
 import random
 from pathlib import Path
 from typing import Callable, Dict, List, Optional, Tuple, Union
 import numpy as np
 import yaml
 from PIL import Image
-import torch
 from torch.utils.data import DataLoader, Dataset
 import torchvision.transforms as transforms
 import albumentations as A
@@ -173,19 +160,25 @@ class PairTransform:
         return lr_tensor, hr_tensor
     
 
-def read_transform_config(config_path: str, section: str) -> Dict:
+def read_transform_config(
+    config_path: Optional[str] = None, 
+    section: str = "train"
+) -> Optional[Dict]:
     """Read and merge transformation configuration from YAML file.
     
     Args:
-        config_path: Path to YAML configuration file.
+        config_path: Optional path to YAML configuration file. If None, returns None.
         section: Section name to read (e.g., 'train', 'val').
         
     Returns:
-        Dictionary with merged transformation configuration.
+        Dictionary with merged transformation configuration, or None if config_path is None.
         
     Raises:
         ValueError: If specified section is not found in config.
     """
+    if config_path is None:
+        return None
+    
     config_data = yaml.safe_load(Path(config_path).read_text())
     
     try:
@@ -241,17 +234,21 @@ def create_rotation_transform(config: Dict) -> A.BasicTransform:
 
 
 def create_transforms_from_config(
-    config: Dict
+    config: Optional[Dict] = None
 ) -> Tuple[Optional[A.Compose], Optional[A.Compose], Optional[A.Compose]]:
     """Create transformation pipelines from configuration.
     
     Args:
-        config: Dictionary with transformation configuration.
+        config: Optional dictionary with transformation configuration.
+            If None, returns (None, None, None).
         
     Returns:
         Tuple of (geometric_transforms, pixel_transforms_lr, pixel_transforms_hr).
-        Any element may be None if no transforms are specified.
+        All elements are None if config is None or no transforms are specified.
     """
+    if config is None:
+        return None, None, None
+
     if not config.get("apply_transforms", True):
         return None, None, None
 
@@ -344,19 +341,23 @@ def create_dataloader_from_dir(
 
 def create_dataloaders(
     data_dir: str, 
-    config_path: str, 
-    loader_to_create: str = 'both', 
-    batch_size: int = 8, 
-    num_workers: int = 4
+    config_path: Optional[str] = None,
+    loader_to_create: Optional[str] = 'both', 
+    batch_size: Optional[int] = 8, 
+    num_workers: Optional[int] = 4
 ) -> Union[DataLoader, Tuple[DataLoader, DataLoader]]:
     """Create train and/or validation dataloaders with appropriate transforms.
     
     Args:
         data_dir: Base directory containing train and val subdirectories.
-        config_path: Path to YAML transform configuration file.
-        loader_to_create: Which loader(s) to create ('train', 'val', or 'both').
-        batch_size: Number of samples per batch.
-        num_workers: Number of subprocesses for data loading.
+        config_path: Optional path to YAML transform configuration file.
+            If None, dataloaders are created without transformations.
+        loader_to_create: Optional choice on which loader(s) to create ('train', 'val', or 'both').
+            If None, defaults to 'both'.
+        batch_size: Optional batch size for dataloaders.
+            If None, defaults to 8.
+        num_workers: Optional number of subprocesses for data loading.
+            If None, defaults to 4.
         
     Returns:
         Either a single DataLoader or tuple of (train_loader, val_loader).
@@ -399,7 +400,7 @@ def create_dataloaders(
     return return_mapping[loader_to_create]()
 
 
-def test_dataloaders(
+def _test_dataloaders(
     data_dir: Path, 
     config_path: Path, 
     batch_size: int = 4, 
@@ -526,7 +527,7 @@ if __name__ == "__main__":
     data_dir = project_root / "data"
     config_path = project_root / "configs" / "transforms.yaml"
     
-    test_dataloaders(
+    _test_dataloaders(
         data_dir=data_dir,
         config_path=config_path,
         batch_size=args.batch_size,

@@ -1,62 +1,70 @@
-"""
-Metrics for evaluating super-resolution models.
+"""Metrics for evaluating super-resolution models.
 
 This module provides functions for calculating various image quality metrics
-including PSNR, SSIM, and others.
+including PSNR, SSIM, and others for comparing image pairs.
 """
 
-import torch
+from typing import Dict, Optional, Tuple, Union
 import numpy as np
+import torch
 from torchmetrics.image.psnr import PeakSignalNoiseRatio
 from torchmetrics.image.ssim import StructuralSimilarityIndexMeasure
 
 
-def calculate_psnr(img1, img2, data_range=None):
-    """
-    Calculate Peak Signal-to-Noise Ratio between two images.
+def calculate_psnr(
+    img1: Union[torch.Tensor, np.ndarray], 
+    img2: Union[torch.Tensor, np.ndarray], 
+    data_range: Optional[float] = None
+) -> float:
+    """Calculate Peak Signal-to-Noise Ratio between two images.
     
     Args:
-        img1 (torch.Tensor or np.ndarray): First image.
-        img2 (torch.Tensor or np.ndarray): Second image.
-        data_range (float, optional): Data range of the images. If None, computed 
-                                      from the ground truth image.
+        img1: First image (predicted or generated).
+        img2: Second image (ground truth).
+        data_range: Data range of the images. If None, computed 
+                    from the ground truth image.
         
     Returns:
-        float: PSNR value in dB.
+        PSNR value in dB.
     """
     img1, img2, data_range = _prepare_metric_calculation(img1, img2, data_range)
     psnr_metric = PeakSignalNoiseRatio(data_range=data_range).to(img1.device)
     return psnr_metric(img1, img2).item()
 
 
-def calculate_ssim(img1, img2, data_range=None):
-    """
-    Calculate Structural Similarity Index between two images.
+def calculate_ssim(
+    img1: Union[torch.Tensor, np.ndarray], 
+    img2: Union[torch.Tensor, np.ndarray], 
+    data_range: Optional[float] = None
+) -> float:
+    """Calculate Structural Similarity Index between two images.
     
     Args:
-        img1 (torch.Tensor or np.ndarray): First image.
-        img2 (torch.Tensor or np.ndarray): Second image.
-        data_range (float, optional): Data range of the images. If None, computed
-                                      from the ground truth image.
+        img1: First image (predicted or generated).
+        img2: Second image (ground truth).
+        data_range: Data range of the images. If None, computed
+                    from the ground truth image.
         
     Returns:
-        float: SSIM value.
+        SSIM value.
     """
     img1, img2, data_range = _prepare_metric_calculation(img1, img2, data_range)
     ssim_metric = StructuralSimilarityIndexMeasure(data_range=data_range).to(img1.device)
     return ssim_metric(img1, img2).item()
 
 
-def evaluate_metrics(sr_images, hr_images):
-    """
-    Calculate multiple metrics for a batch of images.
+def evaluate_metrics(
+    sr_images: Union[torch.Tensor, np.ndarray], 
+    hr_images: Union[torch.Tensor, np.ndarray]
+) -> Dict[str, float]:
+    """Calculate multiple metrics for a batch of images.
     
     Args:
-        sr_images (torch.Tensor or np.ndarray): Super-resolution images.
-        hr_images (torch.Tensor or np.ndarray): High-resolution ground truth images.
+        sr_images: Super-resolution images.
+        hr_images: High-resolution ground truth images.
         
     Returns:
-        dict: Dictionary containing metric values.
+        Dictionary containing metric values.
     """
     metrics = {
         'psnr': calculate_psnr(sr_images, hr_images),
@@ -66,18 +74,24 @@ def evaluate_metrics(sr_images, hr_images):
     return metrics
 
 
-def _prepare_metric_calculation(img1, img2, data_range=None):
-    """
-    Prepare images for metric calculation by ensuring they have correct format.
+def _prepare_metric_calculation(
+    img1: Union[torch.Tensor, np.ndarray], 
+    img2: Union[torch.Tensor, np.ndarray], 
+    data_range: Optional[float] = None
+) -> Tuple[torch.Tensor, torch.Tensor, float]:
+    """Prepare images for metric calculation by ensuring they have correct format.
     
     Args:
-        img1 (torch.Tensor or np.ndarray): First image.
-        img2 (torch.Tensor or np.ndarray): Second image.
-        data_range (float, optional): Data range of the images. If None, computed 
-                                      from the ground truth image.
+        img1: First image.
+        img2: Second image.
+        data_range: Data range of the images. If None, computed 
+                    from the ground truth image.
         
     Returns:
-        tuple: (img1, img2, data_range) prepared for metric calculation.
+        Tuple of (img1, img2, data_range) prepared for metric calculation.
+        
+    Raises:
+        AssertionError: If images don't have the same shape.
     """
     img1 = _prepare_image(img1)
     img2 = _prepare_image(img2)
@@ -92,15 +106,14 @@ def _prepare_metric_calculation(img1, img2, data_range=None):
     return img1, img2, data_range
 
 
-def _prepare_image(img):
-    """
-    Convert input image to a torch.Tensor with proper dimensions and type.
+def _prepare_image(img: Union[np.ndarray, torch.Tensor]) -> torch.Tensor:
+    """Convert input image to a torch.Tensor with proper dimensions and type.
         
     Args:
-        img (np.ndarray or torch.Tensor): Input image.
+        img: Input image.
         
     Returns:
-        torch.Tensor: Prepared image tensor.
+        Prepared image tensor.
     """
     if isinstance(img, np.ndarray):
         img = torch.from_numpy(img)
@@ -116,13 +129,21 @@ def _prepare_image(img):
 
 if __name__ == "__main__":
     """Test PSNR and SSIM calculations on all validation samples."""
-    import os
+    import time
+    import argparse
+    from pathlib import Path
     import torch.nn.functional as F
-    from data import create_dataloaders
     
-    script_dir = os.path.dirname(os.path.abspath(__file__))
-    project_root = os.path.dirname(os.path.dirname(script_dir))
-    data_dir = os.path.join(project_root, "data")
+    parser = argparse.ArgumentParser(description="Test metric calculations on validation samples")
+    parser.add_argument("--batch_size", type=int, default=1, help="Batch size for testing")
+    parser.add_argument("--num_workers", type=int, default=0, help="Number of worker processes")
+    args = parser.parse_args()
+    
+    script_path = Path(__file__).resolve()
+    project_root = script_path.parent.parent.parent
+    data_dir = project_root / "data"
+    
+    start_time = time.time()
     
     print("\n" + "="*50)
     print("INTERPOLATED IMAGE QUALITY METRICS TEST")
@@ -130,35 +151,50 @@ if __name__ == "__main__":
     print(f"Data directory: {data_dir}")
     print("-"*50)
     
-    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    val_loader = create_dataloaders(
-        data_dir=data_dir,
-        loaders_to_create='val',
-        batch_size=1, 
-        num_workers=0
-    )
-    
-    total_metrics = {'psnr': 0.0, 'ssim': 0.0}
-    total_samples = len(val_loader)
-    
-    for lr_img, hr_img in val_loader:
-        lr_img, hr_img = lr_img.to(device), hr_img.to(device)
+    try:
+        from data import create_dataloaders
         
-        lr_img_up = F.interpolate(
-            lr_img, 
-            scale_factor=2, 
-            mode='bicubic', 
-            align_corners=False
+        device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        val_loader = create_dataloaders(
+            data_dir=str(data_dir),
+            loader_to_create='val',
+            batch_size=args.batch_size, 
+            num_workers=args.num_workers
         )
         
-        metrics = evaluate_metrics(lr_img_up, hr_img)
-        for key in total_metrics:
-            total_metrics[key] += metrics[key]
-    
-    avg_metrics = {k: v / total_samples for k, v in total_metrics.items()}
-    
-    print("Average Interpolated Image Quality Metrics:")
-    print(f"  • PSNR: {avg_metrics['psnr']:.2f} dB")
-    print(f"  • SSIM: {avg_metrics['ssim']:.4f}")
-    print("\nMetrics calculation test completed!")
-    print("="*50 + "\n")
+        total_metrics = {'psnr': 0.0, 'ssim': 0.0}
+        total_samples = len(val_loader)
+        
+        print(f"\nProcessing {total_samples} validation samples...")
+        
+        for lr_img, hr_img in val_loader:
+            lr_img, hr_img = lr_img.to(device), hr_img.to(device)
+            
+            lr_img_up = F.interpolate(
+                lr_img, 
+                scale_factor=2, 
+                mode='bicubic', 
+                align_corners=False
+            )
+            
+            metrics = evaluate_metrics(lr_img_up, hr_img)
+            for key in total_metrics:
+                total_metrics[key] += metrics[key]
+        
+        avg_metrics = {k: v / total_samples for k, v in total_metrics.items()}
+        
+        print("\nAverage Interpolated Image Quality Metrics:")
+        print(f"  • PSNR: {avg_metrics['psnr']:.2f} dB")
+        print(f"  • SSIM: {avg_metrics['ssim']:.4f}")
+        
+        elapsed_time = time.time() - start_time
+        print(f"\nMetrics calculation completed in {elapsed_time:.2f} seconds")
+        print("="*50 + "\n")
+        
+    except Exception as e:
+        print(f"\nError during metrics test: {str(e)}")
+        print(f"Error type: {type(e).__name__}")
+        import traceback
+        print(traceback.format_exc())
+        print("="*50 + "\n")
+        raise
