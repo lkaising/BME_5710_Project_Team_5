@@ -1,37 +1,60 @@
+# =============================================
 # MRI Super-Resolution Transforms Configuration
+# =============================================
 
-# Global transforms (apply to both train and val unless overridden)
+# ----------------------------------------------
+# Global transforms
+# Apply to both train and val unless overridden
+# ----------------------------------------------
 transforms:
+  # Global settings can be defined here
 
+# ----------------------------------------------
 # Training-specific configuration
+# ----------------------------------------------
 train:
   apply_transforms: true
   transforms:
+    # Flip transformations
     horizontal_flip:
-      enabled: true
-      p: 0.5
+      enabled: true    # Whether to apply horizontal flipping
+      p: 0.5           # Probability of applying the transform
+    
     vertical_flip:
-      enabled: true
-      p: 0.5
+      enabled: true    # Whether to apply vertical flipping
+      p: 0.5           # Probability of applying the transform
+    
+    # Rotation transformations
     rotate:
       enabled: true
-      p: 1.0  
-      mode: "fixed"    # Options: "fixed" or "range"
+      p: 1.0           # Probability of applying the transform
+      mode: "fixed"    # Options: "fixed" (discrete angles) or "range" (continuous range)
+      
+      # Fixed rotation settings (used when mode: "fixed")
       fixed:
-        angles: [90, 180, 270]
+        angles: [90, 180, 270]  # List of specific rotation angles to choose from
+      
+      # Range rotation settings (used when mode: "range")
       range:
-        limit: 30       # ± degrees
-      interpolation: 1  # INTER_LINEAR
-      border_mode: 4    # BORDER_REFLECT_101 
-      fill_value: [0, 0, 0]  
-      crop_after: false  
+        limit: 30      # Maximum rotation angle (±degrees)
+      
+      # Common rotation parameters
+      interpolation: 1  # Interpolation method: 1=INTER_LINEAR
+      border_mode: 4    # Border handling: 4=BORDER_REFLECT_101
+      fill_value: [0, 0, 0]  # Fill color for areas outside the image
+      crop_after: false  # Whether to crop image after rotation
+    
+    # Noise transformations
     gauss_noise:
-      enabled: true
-      var_limit: [0.0001, 0.002]
-      p: 1.0
+      enabled: true    # Whether to apply Gaussian noise
+      var_limit: [0.0001, 0.002]  # Range of noise variance
+      p: 0.5           # Probability of applying the transform
 
+# ----------------------------------------------
 # Validation-specific configuration
+# ----------------------------------------------
 val:
   apply_transforms: true
   transforms:
-    # Could override from global if needed
+    # Validation-specific transforms can override global settings here
+    # By default, uses global transforms defined above
