@@ -68,16 +68,26 @@ class _MRIDataset(Dataset):
 
 class _PairTransform:
     """
-    Apply the same transformations to both low-res and high-res images.
+    Apply the same *geometric* transform to a low-res (LR) / high-res (HR)
+    image pair, then apply (potentially different) *pixel* transforms.
 
-    Args:
-        transforms (callable, optional): Albumentations transforms to apply.
+    Parameters
+    ----------
+    geo_transforms : Optional[Callable]
+        Albumentations transform that should be shared between LR & HR
+        (e.g. flips, rotations).
+    pixel_transforms_lr : Optional[Callable]
+        Albumentations transform applied **only** to the LR image.
+    pixel_transforms_hr : Optional[Callable]
+        Albumentations transform applied **only** to the HR image.
+        If ``None``, the LR pixel transform is reused.
     """
 
-    def __init__(self, geo_transforms=None, pixel_transforms=None):
+    def __init__(self, geo_transforms = None, pixel_transforms_lr = None, pixel_transforms_hr = None):
         """Initialize with optional transform pipelines."""
         self.geo_transforms = geo_transforms
-        self.pixel_transforms = pixel_transforms
+        self.pixel_transforms_lr = pixel_transforms_lr
+        self.pixel_transforms_hr = pixel_transforms_hr or pixel_transforms_lr
 
     def __call__(self, lr_img, hr_img):
         """
@@ -90,44 +100,49 @@ class _PairTransform:
         Returns:
             tuple: Transformed (lr_tensor, hr_tensor) pair.
         """
-        lr_arr = np.array(lr_img)
-        hr_arr = np.array(hr_img)
+        lr_arr, hr_arr = np.asarray(lr_img), np.asarray(hr_img)
 
         if self.geo_transforms:
             transformed = self.geo_transforms(image=lr_arr, image2=hr_arr)
-            lr_arr = transformed['image']
-            hr_arr = transformed['image2']
+            lr_arr, hr_arr = transformed["image"], transformed["image2"]
 
-        if self.pixel_transforms:
-            seed = random.randint(0, 2**32)
-            
+        seed = random.randint(0, 2**32)
+
+        if self.pixel_transforms_lr:
             random.seed(seed)
             np.random.seed(seed)
-            lr_tensor = self.pixel_transforms(image=lr_arr)['image']
-            
-            random.seed(seed)
-            np.random.seed(seed)
-            hr_tensor = self.pixel_transforms(image=hr_arr)['image']
+            lr_tensor = self.pixel_transforms_lr(image=lr_arr)['image']
         else:
             lr_tensor = transforms.functional.to_tensor(lr_arr)
-            hr_tensor = transforms.functional.to_tensor(hr_arr)
 
+        if self.pixel_transforms_hr:
+            random.seed(seed)
+            np.random.seed(seed)
+            hr_tensor = self.pixel_transforms_hr(image=hr_arr)["image"]
+        else:
+            hr_tensor = transforms.functional.to_tensor(hr_arr)
 
         return lr_tensor, hr_tensor
 
   
 def create_dataloaders(data_dir, config_path, loader_to_create='both', batch_size=8, num_workers=4):
     """
-    Create train and/or validation data loaders from directory structure.
+    Build PyTorch dataloaders for train/val folders that each contain matching *low_res* / 
+    *high_res* sub-directories.
 
-    Args:
-        data_dir (str): Root directory containing 'train' and 'val' subfolders.
-        config_path (str): Path to YAML configuration file.
-        loaders_to_create (str, optional): Which loaders to create: 'train', 'val', or 'both'. Default: 'both'
-        batch_size (int, optional): Batch size for loading data. Default: 8
-        num_workers (int, optional): Number of subprocesses for data loading. Default: 4
+    Parameters
+    ----------
+        data_dir : str | Path
+            Root directory containing ``train`` and ``val`` sub-folders.
+        config_path : str | Path
+            YAML file describing the augmentation pipeline.
+        loader_to_create : {`'train'`, `'val'`, `'both'`}, default `'both'`
+            Which loader(s) to return.
+        batch_size : int, default 8
+        num_workers : int, default 4
 
-    Returns:
+    Returns
+    -------
         DataLoader or tuple: 
             - If 'both': tuple of (train_loader, val_loader)
             - If 'train': train_loader only
@@ -144,24 +159,20 @@ def create_dataloaders(data_dir, config_path, loader_to_create='both', batch_siz
 
     loaders = {}
 
-    if loader_to_create in ['train', 'both']:
-        train_transform_config = _read_transform_config(config_path, section='train')
-        geo_transforms, pixel_transforms = _create_transforms_from_config(train_transform_config)
-        train_transform = _PairTransform(geo_transforms=geo_transforms, pixel_transforms=pixel_transforms)
-        
+    if loader_to_create in {'train', 'both'}:
+        train_cfg = _read_transform_config(config_path, section='train')
+        geo, px_lr, px_hr = _create_transforms_from_config(train_cfg)
         loaders['train'] = _create_dataloader_from_dir(
             os.path.join(data_dir, 'train'),
-            batch_size, num_workers, train_transform, shuffle=True
+            batch_size, num_workers, _PairTransform(geo, px_lr, px_hr), shuffle=True
         )
 
     if loader_to_create in ['val', 'both']:
-        val_transform_config = _read_transform_config(config_path, section='val')
-        geo_transforms, pixel_transforms = _create_transforms_from_config(val_transform_config)
-        val_transform = _PairTransform(geo_transforms=geo_transforms, pixel_transforms=pixel_transforms)
-        
+        val_cfg = _read_transform_config(config_path, section='val')
+        geo, px_lr, px_hr = _create_transforms_from_config(val_cfg)
         loaders['val'] = _create_dataloader_from_dir(
             os.path.join(data_dir, 'val'),
-            batch_size, num_workers, val_transform, shuffle=False
+            batch_size, num_workers, _PairTransform(geo, px_lr, px_hr), shuffle=False
         )
 
     return_mapping = {
@@ -196,7 +207,10 @@ def _read_transform_config(config_path, section):
     apply_transforms = section_config.get("apply_transforms", True)
     section_transforms = section_config.get("transforms") or {}
 
-    combined_transforms = global_transforms.copy()
+    if global_transforms is not None:
+        combined_transforms = global_transforms.copy()
+    else:
+        combined_transforms = {}
     combined_transforms.update(section_transforms)
 
     return {"apply_transforms": apply_transforms, "transforms": combined_transforms}
@@ -204,65 +218,110 @@ def _read_transform_config(config_path, section):
 
 def _create_transforms_from_config(config):
     """
-    Create Albumentations transforms based on the provided configuration.
-    
-    Args:
-        config (dict): Configuration dictionary with transform settings.
-        
-    Returns:
-        A.Compose: Composed transformations or None if transforms are disabled.
+    Build Albumentations transform pipelines from a config dict.
+
+    Returns
+    -------
+    geo_transforms : Optional[Callable]
+        Shared geometric transforms (LR & HR).
+    pixel_transforms_lr : Optional[Callable]
+        Pixel transforms for LR (includes GaussNoise if enabled).
+    pixel_transforms_hr : Optional[Callable]
+        Pixel transforms for HR (excludes GaussNoise).
     """
-    if not config.get('apply_transforms', True):
-        return None
-        
-    geo_transforms = []
-    pixel_transforms = []
-    transforms_config = config.get('transforms', {})
+    if not config.get("apply_transforms", True):
+        return None, None, None
+
+    geo_transforms, px_lr, px_hr = [], [], []
+    t_cfg = config.get("transforms", {})
+
+    if t_cfg.get("horizontal_flip", {}).get("enabled", False):
+        geo_transforms.append(
+            A.HorizontalFlip(
+                p=t_cfg["horizontal_flip"].get("p", 0.5)
+            )
+        )
+
+    if t_cfg.get("vertical_flip", {}).get("enabled", False):
+        geo_transforms.append(
+            A.VerticalFlip(
+                p=t_cfg["vertical_flip"].get("p", 0.5)
+            )
+        )
+
+    if t_cfg.get("rotate", {}).get("enabled", False):
+        geo_transforms.append(_create_rotation_transform(t_cfg.get("rotate", {})))
+
+    if t_cfg.get("gauss_noise", {}).get("enabled", False):
+        px_lr.append(
+            A.GaussNoise(
+                var_limit=tuple(t_cfg["gauss_noise"].get("var_limit", [0.001, 0.01])),
+                p=t_cfg["gauss_noise"].get("p", 0.3),
+            )
+        )
     
-    if transforms_config.get('horizontal_flip', {}).get('enabled', False):
-        p = transforms_config.get('horizontal_flip', {}).get('p', 0.5)
-        geo_transforms.append(A.HorizontalFlip(p=p))
+    px_lr.append(ToTensorV2())
+    px_hr.append(ToTensorV2())
     
-    if transforms_config.get('vertical_flip', {}).get('enabled', False):
-        p = transforms_config.get('vertical_flip', {}).get('p', 0.5)
-        geo_transforms.append(A.VerticalFlip(p=p))
-    
-    if transforms_config.get('rotate', {}).get('enabled', False):
-        limit = transforms_config.get('rotate', {}).get('limit', 15)
-        p = transforms_config.get('rotate', {}).get('p', 0.5)
-        geo_transforms.append(A.Rotate(limit=limit, p=p))
-    
-    if transforms_config.get('elastic_transform', {}).get('enabled', False):
-        alpha = transforms_config.get('elastic_transform', {}).get('alpha', 1.0)
-        sigma = transforms_config.get('elastic_transform', {}).get('sigma', 50.0)
-        alpha_affine = transforms_config.get('elastic_transform', {}).get('alpha_affine', 50.0)
-        p = transforms_config.get('elastic_transform', {}).get('p', 0.5)
-        geo_transforms.append(A.ElasticTransform(alpha=alpha, sigma=sigma, alpha_affine=alpha_affine, p=p))
-    
-    if transforms_config.get('gauss_noise', {}).get('enabled', False):
-        var_limit = transforms_config.get('gauss_noise', {}).get('var_limit', [0.001, 0.01])
-        p = transforms_config.get('gauss_noise', {}).get('p', 0.3)
-        pixel_transforms.append(A.GaussNoise(var_limit=tuple(var_limit), p=p))
-    
-    if transforms_config.get('normalize', {}).get('enabled', True):
-        mean = transforms_config.get('normalize', {}).get('mean', [0.5])
-        std = transforms_config.get('normalize', {}).get('std', [0.5])
-        pixel_transforms.append(A.Normalize(mean=tuple(mean), std=tuple(std)))
-    
-    pixel_transforms.append(ToTensorV2())
-    
-    geo_transforms_list = A.Compose(
+    geo_comp = A.Compose(
         geo_transforms,
         additional_targets={'image2': 'image'},
         is_check_shapes=False
     ) if geo_transforms else None
     
-    pixel_transforms_list = A.Compose(
-        pixel_transforms,
+    px_lr_comp = A.Compose(
+        px_lr,
         is_check_shapes=False
-    ) if pixel_transforms else None
+    ) if px_lr else None
+
+    px_hr_comp = A.Compose(
+        px_hr,
+        is_check_shapes=False
+    ) if px_hr else None
     
-    return geo_transforms_list, pixel_transforms_list
+    return geo_comp, px_lr_comp, px_hr_comp
+
+
+def _create_rotation_transform(config):
+    """Create rotation transform based on configuration."""
+    mode = config.get("mode", "range")
+    
+    common_params = {
+        "p": config.get("p", 0.5),
+        "interpolation": config.get("interpolation", 1),
+        "border_mode": config.get("border_mode", 4),
+        "value": config.get("fill_value", None),
+        "crop_border": config.get("crop_after", False)
+    }
+    
+    if mode == "fixed":
+        return _create_fixed_rotation(config, common_params)
+    
+    return _create_range_rotation(config, common_params)
+
+
+def _create_fixed_rotation(config, common_params):
+    """Create fixed angle rotation transform."""
+    angles = config.get("fixed", {}).get("angles", [90, 180, 270])
+    
+    if set(angles).issubset({90, 180, 270}):
+        return A.RandomRotate90(p=common_params["p"])
+    
+    rotations = [
+        A.Rotate(limit=(angle, angle), p=1.0, **common_params) 
+        for angle in angles
+    ]
+    return A.OneOf(rotations, p=common_params["p"])
+
+
+def _create_range_rotation(config, common_params):
+    """Create random range rotation transform."""
+    limit = config.get("range", {}).get("limit", 15)
+    return A.Rotate(
+        limit=limit,
+        mask_value=config.get("mask_value", None),
+        **common_params
+    )
 
 
 def _create_dataloader_from_dir(split_dir, batch_size, num_workers, transform, shuffle=False):

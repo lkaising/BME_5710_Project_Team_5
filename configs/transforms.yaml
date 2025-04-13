@@ -2,10 +2,6 @@
 
 # Global transforms (apply to both train and val unless overridden)
 transforms:
-  normalize:
-    enabled: false
-    mean: [0.5]
-    std: [0.5]
 
 # Training-specific configuration
 train:
@@ -19,22 +15,23 @@ train:
       p: 0.5
     rotate:
       enabled: true
-      limit: 15
-      p: 0.5
-    elastic_transform:
-      enabled: false
-      alpha: 1.0
-      sigma: 50.0
-      alpha_affine: 50.0
-      p: 1
+      p: 1.0  
+      mode: "fixed"    # Options: "fixed" or "range"
+      fixed:
+        angles: [90, 180, 270]
+      range:
+        limit: 30       # ± degrees
+      interpolation: 1  # INTER_LINEAR
+      border_mode: 4    # BORDER_REFLECT_101 
+      fill_value: [0, 0, 0]  
+      crop_after: false  
     gauss_noise:
       enabled: true
       var_limit: [0.0001, 0.002]
-      p: 0.5
+      p: 1.0
 
 # Validation-specific configuration
 val:
   apply_transforms: true
   transforms:
-    # Just normalization (inherits from global)
     # Could override from global if needed
