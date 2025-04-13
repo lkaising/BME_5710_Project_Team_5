@@ -1,5 +1,4 @@
-"""
-Utility functions for MRI super-resolution project.
+"""Utility functions for MRI super-resolution project.
 
 This package contains utilities for data processing, metrics calculation,
 and result visualization.

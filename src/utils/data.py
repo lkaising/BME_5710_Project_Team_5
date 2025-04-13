@@ -16,7 +16,7 @@ import albumentations as A
 from albumentations.pytorch import ToTensorV2
 
 
-class MRIDataset(Dataset):
+class _MRIDataset(Dataset):
     """Dataset for paired low-resolution and high-resolution MRI images.
     
     This dataset class loads paired MRI images for super-resolution tasks,
@@ -95,7 +95,7 @@ class MRIDataset(Dataset):
         return img if img.size == target_size else img.resize(target_size, Image.BICUBIC)
 
 
-class PairTransform:
+class _PairTransform:
     """Transform utility for paired image processing.
     
     Applies consistent geometric transformations to both images
@@ -160,7 +160,76 @@ class PairTransform:
         return lr_tensor, hr_tensor
     
 
-def read_transform_config(
+def create_dataloaders(
+    data_dir: Optional[str] = None, 
+    config_path: Optional[str] = None,
+    loader_to_create: Optional[str] = None, 
+    batch_size: Optional[int] = 1, 
+    num_workers: Optional[int] = 0
+) -> Optional[Union[DataLoader, Tuple[DataLoader, DataLoader]]]:
+    """Create train and/or validation dataloaders with appropriate transforms.
+    
+    Args:
+        data_dir: Optional base directory containing train and val subdirectories.
+            If None, no dataloaders are created.
+        config_path: Optional path to YAML transform configuration file.
+            If None, dataloaders are created without transformations.
+        loader_to_create: Optional choice on which loader(s) to create ('train', 'val', or 'both').
+            If None, no dataloaders are created.
+        batch_size: Optional batch size for dataloaders.
+            If None, defaults to 1.
+        num_workers: Optional number of subprocesses for data loading.
+            If None, defaults to 0.
+        
+    Returns:
+        DataLoader or tuple of DataLoaders for training and validation.
+        If data_dir is None or loader_to_create is None, returns None.
+        
+    Raises:
+        ValueError: If loader_to_create is not one of 'train', 'val', or 'both'.
+    """
+    if data_dir is None:
+        return None
+    
+    if loader_to_create is None:
+        return None
+    
+    valid_options = ['train', 'val', 'both']
+    if loader_to_create not in valid_options:
+        raise ValueError(f"loader_to_create must be one of {valid_options}")
+    
+    loaders = {}
+    
+    if loader_to_create in ['train', 'both']:
+        train_cfg = _read_transform_config(config_path, section='train')
+        geo, px_lr, px_hr = _create_transforms_from_config(train_cfg)
+        loaders['train'] = _create_dataloader_from_dir(
+            str(Path(data_dir) / 'train'),
+            batch_size, num_workers, 
+            _PairTransform(geo, px_lr, px_hr), 
+            shuffle=True
+        )
+    
+    if loader_to_create in ['val', 'both']:
+        val_cfg = _read_transform_config(config_path, section='val')
+        geo, px_lr, px_hr = _create_transforms_from_config(val_cfg)
+        loaders['val'] = _create_dataloader_from_dir(
+            str(Path(data_dir) / 'val'),
+            batch_size, num_workers, 
+            _PairTransform(geo, px_lr, px_hr), 
+            shuffle=False
+        )
+    
+    return_mapping = {
+        'both': lambda: (loaders['train'], loaders['val']),
+        'train': lambda: loaders['train'],
+        'val': lambda: loaders['val']
+    }
+
+    return return_mapping[loader_to_create]()
+
+
+def _read_transform_config(
     config_path: Optional[str] = None, 
     section: str = "train"
 ) -> Optional[Dict]:
@@ -197,7 +266,7 @@ def read_transform_config(
     }
 
 
-def create_rotation_transform(config: Dict) -> A.BasicTransform:
+def _create_rotation_transform(config: Dict) -> A.BasicTransform:
     """Create rotation transformation based on configuration.
     
     Args:
@@ -233,7 +302,7 @@ def create_rotation_transform(config: Dict) -> A.BasicTransform:
     return _handle_range_rotation()
 
 
-def create_transforms_from_config(
+def _create_transforms_from_config(
     config: Optional[Dict] = None
 ) -> Tuple[Optional[A.Compose], Optional[A.Compose], Optional[A.Compose]]:
     """Create transformation pipelines from configuration.
@@ -268,7 +337,7 @@ def create_transforms_from_config(
 
     rotate_cfg = transform_cfg.get("rotate", {})
     if rotate_cfg.get("enabled", False):
-        geo_transforms.append(create_rotation_transform(rotate_cfg))
+        geo_transforms.append(_create_rotation_transform(rotate_cfg))
 
     noise_cfg = transform_cfg.get("gauss_noise", {})
     if noise_cfg.get("enabled", False):
@@ -288,7 +357,7 @@ def create_transforms_from_config(
     return geo_pipeline, px_lr_pipeline, px_hr_pipeline
 
 
-def get_image_paths_from_split(split_dir: str) -> Tuple[List[str], List[str]]:
+def _get_image_paths_from_split(split_dir: str) -> Tuple[List[str], List[str]]:
     """Get paired image paths from a split directory.
     
     Args:
@@ -309,7 +378,7 @@ def get_image_paths_from_split(split_dir: str) -> Tuple[List[str], List[str]]:
     return lr_paths, hr_paths
 
 
-def create_dataloader_from_dir(
+def _create_dataloader_from_dir(
     split_dir: str, 
     batch_size: int, 
     num_workers: int, 
@@ -328,76 +397,15 @@ def create_dataloader_from_dir(
     Returns:
         DataLoader configured with the MRIDataset.
     """
-    lr_paths, hr_paths = get_image_paths_from_split(split_dir)
+    lr_paths, hr_paths = _get_image_paths_from_split(split_dir)
     
-    dataset = MRIDataset(lr_paths, hr_paths, transform=transform)
+    dataset = _MRIDataset(lr_paths, hr_paths, transform=transform)
     return DataLoader(
         dataset,
         batch_size=batch_size,
         shuffle=shuffle,
         num_workers=num_workers
     )
-
-
-def create_dataloaders(
-    data_dir: str, 
-    config_path: Optional[str] = None,
-    loader_to_create: Optional[str] = 'both', 
-    batch_size: Optional[int] = 8, 
-    num_workers: Optional[int] = 4
-) -> Union[DataLoader, Tuple[DataLoader, DataLoader]]:
-    """Create train and/or validation dataloaders with appropriate transforms.
-    
-    Args:
-        data_dir: Base directory containing train and val subdirectories.
-        config_path: Optional path to YAML transform configuration file.
-            If None, dataloaders are created without transformations.
-        loader_to_create: Optional choice on which loader(s) to create ('train', 'val', or 'both').
-            If None, defaults to 'both'.
-        batch_size: Optional batch size for dataloaders.
-            If None, defaults to 8.
-        num_workers: Optional number of subprocesses for data loading.
-            If None, defaults to 4.
-        
-    Returns:
-        Either a single DataLoader or tuple of (train_loader, val_loader).
-        
-    Raises:
-        ValueError: If loader_to_create is not one of 'train', 'val', or 'both'.
-    """
-    valid_options = ['train', 'val', 'both']
-    if loader_to_create not in valid_options:
-        raise ValueError(f"loader_to_create must be one of {valid_options}")
-    
-    loaders = {}
-    
-    if loader_to_create in ['train', 'both']:
-        train_cfg = read_transform_config(config_path, section='train')
-        geo, px_lr, px_hr = create_transforms_from_config(train_cfg)
-        loaders['train'] = create_dataloader_from_dir(
-            str(Path(data_dir) / 'train'),
-            batch_size, num_workers, 
-            PairTransform(geo, px_lr, px_hr), 
-            shuffle=True
-        )
-    
-    if loader_to_create in ['val', 'both']:
-        val_cfg = read_transform_config(config_path, section='val')
-        geo, px_lr, px_hr = create_transforms_from_config(val_cfg)
-        loaders['val'] = create_dataloader_from_dir(
-            str(Path(data_dir) / 'val'),
-            batch_size, num_workers, 
-            PairTransform(geo, px_lr, px_hr), 
-            shuffle=False
-        )
-    
-    return_mapping = {
-        'both': lambda: (loaders['train'], loaders['val']),
-        'train': lambda: loaders['train'],
-        'val': lambda: loaders['val']
-    }
-
-    return return_mapping[loader_to_create]()
 
 
 def _test_dataloaders(
@@ -429,6 +437,7 @@ def _test_dataloaders(
     try:
         train_loader, val_loader = create_dataloaders(
             data_dir=data_dir,
+            loader_to_create='both',
             batch_size=batch_size,
             num_workers=num_workers,
             config_path=config_path
