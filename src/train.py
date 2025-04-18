@@ -28,7 +28,7 @@ def parse_args():
     parser.add_argument("--config", type=str, required=True, help="Path to config file")
     parser.add_argument("--checkpoint", type=str, help="Path to checkpoint to resume from")
     parser.add_argument("--output_dir", type=str, default="./checkpoints", help="Directory to save checkpoints")
-    parser.add_argument("--model", type=str, default="trivial", help="Model architecture: 'unet' or 'trivial'")
+    parser.add_argument("--model", type=str, default="willnet", help="Model architecture: 'unet' or 'willnet'")
     parser.add_argument("--gamma", type=float, default=0.5, help="Weight ratio of MSE to SSIM in loss function")
     parser.add_argument("--lr", type=float, default=1e-3, help="Learning rate")
     parser.add_argument("--batch_size", type=int, default=5, help="Batch size")
@@ -41,6 +41,11 @@ def load_config(config_path):
     """Load configuration from YAML file."""
     with open(config_path, "r") as f:
         config = yaml.safe_load(f)
+    
+    if config is None:
+        print(f"Warning: Config file {config_path} is empty or invalid. Using default values.")
+        config = {}
+    
     return config
 
 
@@ -49,7 +54,7 @@ def create_model(model_name, device):
     Create a model instance based on model name.
     
     Args:
-        model_name (str): Name of the model ('unet' or 'trivial')
+        model_name (str): Name of the model ('unet' or 'willnnet')
         device (torch.device): Device to move the model to
         
     Returns:
@@ -57,10 +62,10 @@ def create_model(model_name, device):
     """
     if model_name.lower() == 'unet':
         model = SRNET().to(device)
-    elif model_name.lower() == 'trivial':
+    elif model_name.lower() == 'willnet':
         model = WillNet().to(device)
     else:
-        raise ValueError(f"Unknown model: {model_name}. Choose 'unet' or 'trivial'")
+        raise ValueError(f"Unknown model: {model_name}. Choose 'unet' or 'willnet'")
     
     return model
 

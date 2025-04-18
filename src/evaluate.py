@@ -35,6 +35,11 @@ def load_config(config_path):
     """Load configuration from YAML file."""
     with open(config_path, "r") as f:
         config = yaml.safe_load(f)
+    
+    if config is None:
+        print(f"Warning: Config file {config_path} is empty or invalid. Using default values.")
+        config = {}
+    
     return config
 
 

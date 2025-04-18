@@ -48,7 +48,7 @@ train:
     gauss_noise:
       enabled: true    # Whether to apply Gaussian noise
       var_limit: [0.0001, 0.002]  # Range of noise variance
-      p: 0.5           # Probability of applying the transform
+      p: 0.0           # Probability of applying the transform
 
 # ----------------------------------------------
 # Validation-specific configuration
