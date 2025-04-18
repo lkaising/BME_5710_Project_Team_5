@@ -18,7 +18,7 @@ from tqdm import tqdm
 from torch.utils.tensorboard import SummaryWriter
 
 from models import SRNET, WillNet
-from models import combined_loss
+from models import combined_loss, mse_loss, ssim_loss
 from utils import create_dataloaders, evaluate_metrics
 
 
@@ -34,6 +34,7 @@ def parse_args():
     parser.add_argument("--batch_size", type=int, default=5, help="Batch size")
     parser.add_argument("--epochs", type=int, default=10, help="Number of epochs")
     parser.add_argument("--log_interval", type=int, default=10, help="Log interval")
+    parser.add_argument("--regularization", type=str, default="none", help="Regularization technique: 'none', 'dropout', or 'weight_decay'")
     return parser.parse_args()
 
 
@@ -70,7 +71,7 @@ def create_model(model_name, device):
     return model
 
 
-def train_epoch(model, dataloader, optimizer, gamma, device):
+def train_epoch(model, dataloader, optimizer, gamma, device, regularization):
     """
     Train the model for one epoch.
     
@@ -80,6 +81,7 @@ def train_epoch(model, dataloader, optimizer, gamma, device):
         optimizer (torch.optim.Optimizer): Optimizer
         gamma (float): Weight for MSE loss in combined loss
         device (torch.device): Device to use for training
+        regularization (str): Regularization technique to apply
         
     Returns:
         float: Average training loss for the epoch
@@ -101,6 +103,9 @@ def train_epoch(model, dataloader, optimizer, gamma, device):
         sr_img = model(lr_img_up)
         
         loss = combined_loss(sr_img, hr_img, gamma)
+        
+        if regularization == "dropout":
+            loss += 0.1 * torch.mean(torch.abs(sr_img))
         
         loss.backward()
         optimizer.step()
@@ -211,7 +216,7 @@ def main():
     
     model = create_model(args.model, device)
     
-    optimizer = optim.Adam(model.parameters(), lr=args.lr)
+    optimizer = optim.Adam(model.parameters(), lr=args.lr, weight_decay=1e-5 if args.regularization == "weight_decay" else 0)
     
     start_epoch = 0
     if args.checkpoint:
@@ -227,7 +232,7 @@ def main():
     for epoch in range(start_epoch, args.epochs):
         print(f"\nEpoch {epoch+1}/{args.epochs}")
         
-        train_loss = train_epoch(model, train_loader, optimizer, args.gamma, device)
+        train_loss = train_epoch(model, train_loader, optimizer, args.gamma, device, args.regularization)
         train_losses.append(train_loss)
         
         val_loss, val_metrics = validate(model, val_loader, args.gamma, device)

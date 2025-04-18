@@ -11,7 +11,6 @@ from torchmetrics.image.ssim import StructuralSimilarityIndexMeasure
 
 
 def mse_loss(pred, target):
-    # TODO: Update, check, and refactor the code. 
     """
     Mean Squared Error loss.
     
@@ -26,7 +25,6 @@ def mse_loss(pred, target):
 
 
 def ssim_loss(pred, target, data_range=1.0):
-    # TODO: Update, check, and refactor the code. 
     """
     Structural Similarity Index (SSIM) loss.
     
@@ -44,7 +42,6 @@ def ssim_loss(pred, target, data_range=1.0):
 
 
 def combined_loss(pred, target, gamma, data_range=1.0):
-    # TODO: Update, check, and refactor the code. 
     """
     Combined MSE and SSIM loss.
     
@@ -60,4 +57,4 @@ def combined_loss(pred, target, gamma, data_range=1.0):
     mse_loss_value = mse_loss(pred, target)
     ssim_loss_value = ssim_loss(pred, target, data_range)
 
-    return gamma  * mse_loss_value + (1.0 - gamma) * ssim_loss_value
+    return gamma * mse_loss_value + (1.0 - gamma) * ssim_loss_value
