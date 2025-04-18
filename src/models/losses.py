@@ -59,5 +59,5 @@ def combined_loss(pred, target, gamma, data_range=1.0):
     """
     mse_loss_value = mse_loss(pred, target)
     ssim_loss_value = ssim_loss(pred, target, data_range)
-    
-    return gamma * mse_loss_value + (1.0 - gamma) * ssim_loss_value
+
+    return gamma  * mse_loss_value + (1.0 - gamma) * ssim_loss_value
