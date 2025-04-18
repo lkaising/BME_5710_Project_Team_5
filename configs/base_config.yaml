@@ -14,17 +14,19 @@ use_cuda: true
 model_params:
   in_channels: 1
   out_channels: 1
-  
+  filters: [64, 128, 256, 512]  # Added filters for U-Net architecture
+
 # Training configuration
 training:
-  batch_size: 5
-  learning_rate: 1e-3
-  epochs: 10
-  gamma: 0.5
-  
+  batch_size: 8  # Increased batch size for better gradient estimation
+  learning_rate: 1e-4  # Reduced learning rate for more stable training
+  epochs: 20  # Increased number of epochs for more training iterations
+  gamma: 0.7  # Adjusted gamma for combined loss function
+  weight_decay: 1e-5  # Added weight decay for regularization
+
 # Validation configuration
 validation:
   batch_size: 1
-  
+
 # Logging configuration
 log_interval: 10
