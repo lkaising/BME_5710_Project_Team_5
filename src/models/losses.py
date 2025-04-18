@@ -7,10 +7,11 @@ super-resolution models, including pixel-wise losses and perceptual losses.
 
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
+from torchmetrics.image.ssim import StructuralSimilarityIndexMeasure
 
 
 def mse_loss(pred, target):
+    # TODO: Update, check, and refactor the code. 
     """
     Mean Squared Error loss.
     
@@ -21,38 +22,42 @@ def mse_loss(pred, target):
     Returns:
         torch.Tensor: MSE loss
     """
-    # Implementation will go here
-    pass
+    return nn.MSELoss()(pred, target)
 
 
-def ssim_loss(pred, target, window_size=11):
+def ssim_loss(pred, target, data_range=1.0):
+    # TODO: Update, check, and refactor the code. 
     """
     Structural Similarity Index (SSIM) loss.
     
     Args:
         pred (torch.Tensor): Predicted image
         target (torch.Tensor): Target high-resolution image
-        window_size (int): Size of the SSIM window
+        data_range (float): Data range of the images
         
     Returns:
         torch.Tensor: 1 - SSIM (as a loss function)
     """
-    # Implementation will go here
-    pass
+    ssim = StructuralSimilarityIndexMeasure(data_range=data_range).to(pred.device)
+    ssim_val: torch.Tensor = ssim(pred, target)
+    return 1.0 - ssim_val
 
 
-def combined_loss(pred, target, mse_weight=0.8, ssim_weight=0.2):
+def combined_loss(pred, target, gamma, data_range=1.0):
+    # TODO: Update, check, and refactor the code. 
     """
     Combined MSE and SSIM loss.
     
     Args:
         pred (torch.Tensor): Predicted image
         target (torch.Tensor): Target high-resolution image
-        mse_weight (float): Weight for MSE loss
-        ssim_weight (float): Weight for SSIM loss
+        gamma (float): Weight for MSE loss 
+        data_range (float): Data range for SSIM calculation
         
     Returns:
         torch.Tensor: Combined loss
     """
-    # Implementation will go here
-    pass
+    mse_loss_value = mse_loss(pred, target)
+    ssim_loss_value = ssim_loss(pred, target, data_range)
+    
+    return gamma * mse_loss_value + (1.0 - gamma) * ssim_loss_value
