@@ -43,6 +43,10 @@ def ssim_loss(pred, target, data_range=1.0):
     return 1.0 - ssim_val
 
 
+def charbonnier_loss(pred, target, eps=1e-6):
+    return torch.sqrt((pred - target).pow(2) + eps).mean()
+
+
 def combined_loss(pred, target, gamma, data_range=1.0):
     # TODO: Update, check, and refactor the code. 
     """
@@ -57,7 +61,8 @@ def combined_loss(pred, target, gamma, data_range=1.0):
     Returns:
         torch.Tensor: Combined loss
     """
-    mse_loss_value = mse_loss(pred, target)
+    # mse_loss_value = mse_loss(pred, target)
+    pix_lose_value = charbonnier_loss(pred, target)
     ssim_loss_value = ssim_loss(pred, target, data_range)
 
-    return gamma  * mse_loss_value + (1.0 - gamma) * ssim_loss_value
+    return gamma  * pix_lose_value + (1.0 - gamma) * ssim_loss_value

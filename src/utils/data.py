@@ -36,7 +36,9 @@ class _MRIDataset(Dataset):
         hr_paths: List[str], 
         transform: Optional[Callable] = None, 
         lr_size: Tuple[int, int] = (128, 128), 
-        hr_size: Tuple[int, int] = (256, 256)
+        hr_size: Tuple[int, int] = (256, 256),
+        crop_size: Optional[int] = None,
+        is_train: bool = False
     ):
         """Initialize the MRI dataset with image paths and transformations.
         
@@ -46,12 +48,16 @@ class _MRIDataset(Dataset):
             transform: Optional callable to transform the image pairs.
             lr_size: Target size for low-resolution images (width, height).
             hr_size: Target size for high-resolution images (width, height).
+            crop_size: Size of random crop to apply (in LR pixels). If None, no cropping is done.
+            is_train: Whether this dataset is for training mode
         """
         self.lr_paths = lr_paths
         self.hr_paths = hr_paths
         self.transform = transform
         self.lr_size = lr_size
         self.hr_size = hr_size
+        self.crop_size = crop_size
+        self.is_train = is_train
 
     def __len__(self) -> int:
         """Return the number of image pairs in the dataset.
@@ -78,6 +84,16 @@ class _MRIDataset(Dataset):
 
         if self.transform:
             lr_img, hr_img = self.transform(lr_img, hr_img)
+        
+        if self.is_train and self.crop_size is not None:
+            h, w = lr_img.shape[-2:]
+            crop_size = min(self.crop_size, h, w)
+            
+            top = np.random.randint(0, h - crop_size + 1)
+            left = np.random.randint(0, w - crop_size + 1)
+            
+            lr_img = lr_img[..., top:top+crop_size, left:left+crop_size]
+            hr_img = hr_img[..., top*2:(top+crop_size)*2, left*2:(left+crop_size)*2]
 
         return lr_img, hr_img
 
@@ -203,21 +219,37 @@ def create_dataloaders(
     if loader_to_create in ['train', 'both']:
         train_cfg = _read_transform_config(config_path, section='train')
         geo, px_lr, px_hr = _create_transforms_from_config(train_cfg)
+
+        crop_size = None
+        if train_cfg and 'crop_size' in train_cfg:
+            crop_size = train_cfg['crop_size']
+
         loaders['train'] = _create_dataloader_from_dir(
             str(Path(data_dir) / 'train'),
-            batch_size, num_workers, 
+            batch_size, 
+            num_workers, 
             _PairTransform(geo, px_lr, px_hr), 
-            shuffle=True
+            shuffle=True,
+            crop_size=crop_size,
+            is_train=True
         )
     
     if loader_to_create in ['val', 'both']:
         val_cfg = _read_transform_config(config_path, section='val')
         geo, px_lr, px_hr = _create_transforms_from_config(val_cfg)
+
+        crop_size = None
+        if val_cfg and 'crop_size' in val_cfg:
+            crop_size = val_cfg['crop_size']
+
         loaders['val'] = _create_dataloader_from_dir(
             str(Path(data_dir) / 'val'),
-            batch_size, num_workers, 
+            batch_size, 
+            num_workers, 
             _PairTransform(geo, px_lr, px_hr), 
-            shuffle=False
+            shuffle=False,
+            crop_size=crop_size,
+            is_train=False
         )
     
     return_mapping = {
@@ -260,10 +292,15 @@ def _read_transform_config(
     
     combined_settings = {**global_settings, **section_settings}
     
-    return {
+    result = {
         "apply_transforms": section_data.get("apply_transforms", True),
         "transforms": combined_settings
     }
+    
+    if "crop_size" in section_data:
+        result["crop_size"] = section_data["crop_size"]
+        
+    return result
 
 
 def _create_rotation_transform(config: Dict) -> A.BasicTransform:
@@ -383,7 +420,9 @@ def _create_dataloader_from_dir(
     batch_size: int, 
     num_workers: int, 
     transform: Optional[Callable] = None, 
-    shuffle: bool = False
+    shuffle: bool = False,
+    crop_size: Optional[int] = None,
+    is_train: bool = False
 ) -> DataLoader:
     """Create DataLoader from a directory containing image pairs.
     
@@ -399,12 +438,20 @@ def _create_dataloader_from_dir(
     """
     lr_paths, hr_paths = _get_image_paths_from_split(split_dir)
     
-    dataset = _MRIDataset(lr_paths, hr_paths, transform=transform)
+    dataset = _MRIDataset(
+        lr_paths, 
+        hr_paths, 
+        transform=transform, 
+        crop_size=crop_size,
+        is_train=is_train
+    )
+    
     return DataLoader(
         dataset,
         batch_size=batch_size,
         shuffle=shuffle,
-        num_workers=num_workers
+        num_workers=num_workers,
+        pin_memory=True
     )
 
 

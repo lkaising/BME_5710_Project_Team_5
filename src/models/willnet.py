@@ -26,6 +26,13 @@ class WillNet(nn.Module):
         self.conv2 = nn.Conv2d(in_channels=features[0], out_channels=features[1], kernel_size=5, padding=2)
         self.conv3 = nn.Conv2d(in_channels=features[1], out_channels=out_channels, kernel_size=5, padding=2)
         self.relu = nn.ReLU()
+         # ─── NEW: small residual block ──────────
+        self.resblock = nn.Sequential(
+            nn.Conv2d(features[1], features[1], kernel_size=3, padding=1),
+            nn.ReLU(inplace=True),
+            nn.Conv2d(features[1], features[1], kernel_size=3, padding=1),
+        )
+        # ────────────────────────────────────────
 
     def forward(self, x):
         """
@@ -40,6 +47,12 @@ class WillNet(nn.Module):
         residual = x 
         x = self.relu(self.conv1(x))  
         x = self.relu(self.conv2(x))  
+        # ─── NEW residual block ───
+        rb_in = x
+        x    = self.resblock(x)
+        x   += rb_in                  # local skip inside the block
+        x    = self.relu(x)
+        # ──────────────────────────
         x = x + residual 
         x = self.relu(self.conv3(x)) 
         return x

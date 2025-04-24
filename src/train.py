@@ -17,7 +17,7 @@ import torch.optim as optim
 from tqdm import tqdm
 from torch.utils.tensorboard import SummaryWriter
 
-from models import SRNET, WillNet
+from models import SRNET, WillNet, WillNetSE, WillNetSEPlus
 from models import combined_loss
 from utils import create_dataloaders, evaluate_metrics
 
@@ -28,12 +28,14 @@ def parse_args():
     parser.add_argument("--config", type=str, required=True, help="Path to config file")
     parser.add_argument("--checkpoint", type=str, help="Path to checkpoint to resume from")
     parser.add_argument("--output_dir", type=str, default="./checkpoints", help="Directory to save checkpoints")
-    parser.add_argument("--model", type=str, default="willnet", help="Model architecture: 'unet' or 'willnet'")
+    parser.add_argument("--model", type=str, default="willnet", help="Model architecture: 'unet', 'willnet', 'willnet_se', or 'willnet_se_plus'")
     parser.add_argument("--gamma", type=float, default=0.5, help="Weight ratio of MSE to SSIM in loss function")
     parser.add_argument("--lr", type=float, default=1e-3, help="Learning rate")
     parser.add_argument("--batch_size", type=int, default=5, help="Batch size")
     parser.add_argument("--epochs", type=int, default=10, help="Number of epochs")
     parser.add_argument("--log_interval", type=int, default=10, help="Log interval")
+    parser.add_argument("--mid_channels", type=int, default=48, help="Middle channels for WillNetSEPlus")
+    parser.add_argument("--n_blocks", type=int, default=8, help="Number of residual blocks for WillNetSEPlus")
     return parser.parse_args()
 
 
@@ -49,12 +51,12 @@ def load_config(config_path):
     return config
 
 
-def create_model(model_name, device):
+def create_model(model_name, device, args=None):
     """
     Create a model instance based on model name.
     
     Args:
-        model_name (str): Name of the model ('unet' or 'willnnet')
+        model_name (str): Name of the model ('unet', 'willnet', or 'willnet_se')
         device (torch.device): Device to move the model to
         
     Returns:
@@ -64,13 +66,25 @@ def create_model(model_name, device):
         model = SRNET().to(device)
     elif model_name.lower() == 'willnet':
         model = WillNet().to(device)
+    elif model_name.lower() == 'willnet_se':  # Add support for new model
+        model = WillNetSE().to(device)
+    elif model_name.lower() == 'willnet_se_plus':
+        mid_channels = args.mid_channels if args else 48
+        n_blocks = args.n_blocks if args else 8
+        model = WillNetSEPlus(
+            in_channels=1, 
+            out_channels=1, 
+            mid_channels=mid_channels,
+            n_blocks=n_blocks,
+            upscale=2
+        ).to(device)
     else:
-        raise ValueError(f"Unknown model: {model_name}. Choose 'unet' or 'willnet'")
+        raise ValueError(f"Unknown model: {model_name}. Choose 'unet', 'willnet', or 'willnet_se'")
     
     return model
 
 
-def train_epoch(model, dataloader, optimizer, gamma, device):
+def train_epoch(model, dataloader, optimizer, gamma, device, model_name):
     """
     Train the model for one epoch.
     
@@ -80,6 +94,7 @@ def train_epoch(model, dataloader, optimizer, gamma, device):
         optimizer (torch.optim.Optimizer): Optimizer
         gamma (float): Weight for MSE loss in combined loss
         device (torch.device): Device to use for training
+        model_name (str): Name of the model for handling different input requirements
         
     Returns:
         float: Average training loss for the epoch
@@ -90,15 +105,18 @@ def train_epoch(model, dataloader, optimizer, gamma, device):
     for i, (lr_img, hr_img) in enumerate(tqdm(dataloader, desc="Training")):
         lr_img, hr_img = lr_img.to(device), hr_img.to(device)
         
-        lr_img_up = torch.nn.functional.interpolate(
-            lr_img, 
-            scale_factor=2, 
-            mode='bicubic', 
-            align_corners=False
-        )
-        
         optimizer.zero_grad()
-        sr_img = model(lr_img_up)
+        
+        if model_name.lower() == 'willnet_se_plus':
+            sr_img = model(lr_img)
+        else:
+            lr_img_up = torch.nn.functional.interpolate(
+                lr_img, 
+                scale_factor=2, 
+                mode='bicubic', 
+                align_corners=False
+            )
+            sr_img = model(lr_img_up)
         
         loss = combined_loss(sr_img, hr_img, gamma)
         
@@ -111,7 +129,7 @@ def train_epoch(model, dataloader, optimizer, gamma, device):
     return avg_loss
 
 
-def validate(model, dataloader, gamma, device):
+def validate(model, dataloader, gamma, device, model_name):
     """
     Validate the model on the validation set.
     
@@ -131,15 +149,17 @@ def validate(model, dataloader, gamma, device):
     with torch.no_grad():
         for lr_img, hr_img in tqdm(dataloader, desc="Validation"):
             lr_img, hr_img = lr_img.to(device), hr_img.to(device)
-            
-            lr_img_up = torch.nn.functional.interpolate(
-                lr_img,
-                scale_factor=2,
-                mode='bicubic',
-                align_corners=False
-            )
-            
-            sr_img = model(lr_img_up)
+
+            if model_name.lower() == 'willnet_se_plus':
+                sr_img = model(lr_img)
+            else:
+                lr_img_up = torch.nn.functional.interpolate(
+                    lr_img,
+                    scale_factor=2,
+                    mode='bicubic',
+                    align_corners=False
+                )
+                sr_img = model(lr_img_up)
             
             loss = combined_loss(sr_img, hr_img, gamma)
             total_loss += loss.item()
@@ -209,7 +229,7 @@ def main():
         num_workers=config.get("num_workers", 4)
     )
     
-    model = create_model(args.model, device)
+    model = create_model(args.model, device, args)
     
     optimizer = optim.Adam(model.parameters(), lr=args.lr)
     
@@ -227,10 +247,10 @@ def main():
     for epoch in range(start_epoch, args.epochs):
         print(f"\nEpoch {epoch+1}/{args.epochs}")
         
-        train_loss = train_epoch(model, train_loader, optimizer, args.gamma, device)
+        train_loss = train_epoch(model, train_loader, optimizer, args.gamma, device, args.model)
         train_losses.append(train_loss)
         
-        val_loss, val_metrics = validate(model, val_loader, args.gamma, device)
+        val_loss, val_metrics = validate(model, val_loader, args.gamma, device, args.model)
         val_losses.append(val_loss)
         
         print(f"Train Loss: {train_loss:.6f}, Val Loss: {val_loss:.6f}")
