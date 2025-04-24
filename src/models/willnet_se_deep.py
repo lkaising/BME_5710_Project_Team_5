@@ -30,6 +30,9 @@ class WillNetSEDeep(nn.Module):
         self.body = nn.Sequential(*[SEResBlock(mid_ch) for _ in range(n_blocks)])
         self.tail = nn.Conv2d(mid_ch, 1, 5, padding=2)
 
+        if hasattr(self.body, 'gradient_checkpointing_enable'):
+            self.body.gradient_checkpointing_enable()
+
     def forward(self, x):
         res = x
         x = self.head(x)

@@ -9,6 +9,8 @@
 # ---------------------------------------------------------------------------
 from __future__ import annotations
 
+import os
+import gc
 import argparse
 import time
 from pathlib import Path
@@ -19,6 +21,9 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 import yaml
+
+os.environ['PYTORCH_CUDA_ALLOC_CONF'] = 'expandable_segments:True'
+
 from torch.amp import GradScaler, autocast
 from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
@@ -188,6 +193,10 @@ class Trainer:
 
         for epoch in range(self.start_epoch, self.args.epochs):
             print(f"\nEpoch {epoch + 1}/{self.args.epochs}")
+
+            if epoch % 10 == 0:
+                torch.cuda.empty_cache()
+                gc.collect()
 
             train_loss, _ = self._loop(self.train_loader, train=True)
             val_loss, val_metrics = self._loop(self.val_loader, train=False)
