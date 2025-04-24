@@ -9,10 +9,9 @@
 # ---------------------------------------------------------------------------
 from __future__ import annotations
 
-import os
-import gc
-import argparse
-import time
+import os, gc, argparse, time 
+os.environ['PYTORCH_CUDA_ALLOC_CONF'] = 'expandable_segments:True'
+
 from pathlib import Path
 from typing import Any, Dict, Tuple
 
@@ -21,33 +20,30 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 import yaml
-
-os.environ['PYTORCH_CUDA_ALLOC_CONF'] = 'expandable_segments:True'
-
 from torch.amp import GradScaler, autocast
 from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
 
-from models import SRNET, WillNet, WillNetSE, WillNetSEPlus, WillNetSEDeep, combined_loss
+from models import WillNet, WillNetSEDeep, combined_loss
 from utils import create_dataloaders, evaluate_metrics
 
 # ---------------------------------------------------------------------------
 # CLI -----------------------------------------------------------------------
 
 def build_arg_parser() -> argparse.ArgumentParser:
-    p = argparse.ArgumentParser(description="Train MRI super‑resolution model")
+    p = argparse.ArgumentParser(description="Train MRI super-resolution model")
     p.add_argument("--config", type=str, required=True, help="YAML config file")
     p.add_argument("--checkpoint", type=str, help="Resume checkpoint path")
     p.add_argument("--output_dir", type=str, default="./checkpoints", help="Save dir")
     p.add_argument("--model", type=str, default="willnet", choices = [
-        "unet", "willnet", "willnet_se", "willnet_se_plus", "willnet_se_deep"], help="Model arch")
+        "willnet", "willnet_se_deep"], help="Model arch")
     p.add_argument("--gamma", type=float, default=0.5, help="MSE:SSIM weight ratio")
     p.add_argument("--lr", type=float, default=1e-4, help="Learning rate")
     p.add_argument("--batch_size", type=int, default=4, help="Batch size")
     p.add_argument("--epochs", type=int, default=100, help="Max epochs")
     p.add_argument("--mid_channels", type=int, default=48, help="Width for SEPlus")
     p.add_argument("--n_blocks", type=int, default=8, help="#ResBlocks for SEPlus")
-    p.add_argument("--patience", type=int, default=20, help="Early‑stop patience")
+    p.add_argument("--patience", type=int, default=20, help="Early-stop patience")
     p.add_argument("--step_size", type=int, default=30, help="LR StepLR period")
     p.add_argument("--gamma_lr", type=float, default=0.5, help="LR decay factor")
     return p
@@ -63,22 +59,10 @@ def load_yaml(path: str | Path) -> Dict[str, Any]:
 
 def build_model(name: str, device: torch.device, args: argparse.Namespace) -> nn.Module:
     name = name.lower()
-    if name == "unet":
-        model = SRNET()
-    elif name == "willnet":
+    if name == "willnet":
         model = WillNet()
-    elif name == "willnet_se":
-        model = WillNetSE()
     elif name == "willnet_se_deep":
-        model = WillNetSEDeep(n_blocks=args.n_blocks, mid_ch=args.mid_channels)
-    elif name == "willnet_se_plus":
-        model = WillNetSEPlus(
-            in_channels=1,
-            out_channels=1,
-            mid_channels=args.mid_channels,
-            n_blocks=args.n_blocks,
-            upscale=2,
-        )
+        model = WillNetSEDeep(n_blocks=args.n_blocks, mid_channels=args.mid_channels)
     else:
         raise ValueError(f"Unknown model {name}")
     return model.to(device)
@@ -113,8 +97,11 @@ class Trainer:
         # Model/optim --------------------------------------------------------
         self.model = build_model(args.model, self.device, args)
         self.optimizer = optim.Adam(self.model.parameters(), lr=args.lr)
-        self.scheduler = optim.lr_scheduler.StepLR(
-            self.optimizer, step_size=args.step_size, gamma=args.gamma_lr
+        # self.scheduler = optim.lr_scheduler.StepLR(
+        #     self.optimizer, step_size=args.step_size, gamma=args.gamma_lr
+        # )
+        self.scheduler = optim.lr_scheduler.CosineAnnealingLR(
+            self.optimizer, T_max=args.epochs, eta_min=args.lr * 0.1
         )
         self.scaler = GradScaler(enabled=self.device.type == "cuda")
 
@@ -127,9 +114,6 @@ class Trainer:
     # ---------------------------------------------------------------------
     # Epoch routines -------------------------------------------------------
     def _forward_pass(self, lr_img: torch.Tensor, model_name: str) -> torch.Tensor:
-        if model_name == "willnet_se_plus":
-            return self.model(lr_img)
-        # other nets expect 2× upsampled LR
         lr_up = torch.nn.functional.interpolate(lr_img, scale_factor=2, mode="bicubic", align_corners=False)
         return self.model(lr_up)
 
@@ -173,7 +157,7 @@ class Trainer:
             "loss": val_loss,
             "metrics": metrics,
         }
-        fname = self.output_dir / f"{self.args.model}_epoch_{epoch}.pth"
+        fname = self.output_dir / f"{self.args.model}_epoch_{epoch}_test.pth"
         torch.save(ckpt, fname)
         print(f"Checkpoint saved: {fname}")
 
@@ -194,9 +178,7 @@ class Trainer:
         for epoch in range(self.start_epoch, self.args.epochs):
             print(f"\nEpoch {epoch + 1}/{self.args.epochs}")
 
-            if epoch % 10 == 0:
-                torch.cuda.empty_cache()
-                gc.collect()
+            if epoch % 10 == 0: torch.cuda.empty_cache(); gc.collect()
 
             train_loss, _ = self._loop(self.train_loader, train=True)
             val_loss, val_metrics = self._loop(self.val_loader, train=False)

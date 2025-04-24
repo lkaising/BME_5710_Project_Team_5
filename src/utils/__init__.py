@@ -5,5 +5,6 @@ and result visualization.
 """
 
 from .data import create_dataloaders
+from .grad import grad
 from .metrics import calculate_psnr, calculate_ssim, evaluate_metrics
 from .visualization import plot_comparison, save_results
