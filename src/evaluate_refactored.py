@@ -27,10 +27,7 @@ from torch.amp import autocast
 from tqdm import tqdm
 
 from models import (
-    SRNET,
     WillNet,
-    WillNetSE,
-    WillNetSEPlus,
     WillNetSEDeep,
     combined_loss,  # not used here but keeps IDE import grouping consistent
 )
@@ -67,22 +64,10 @@ def load_yaml(path: str | Path) -> Dict[str, Any]:
 
 def build_model(name: str, device: torch.device, args: argparse.Namespace) -> torch.nn.Module:
     name = name.lower()
-    if name == "unet":
-        model = SRNET()
-    elif name == "willnet":
+    if name == "willnet":
         model = WillNet()
-    elif name == "willnet_se":
-        model = WillNetSE()
     elif name == "willnet_se_deep":
-        model = WillNetSEDeep(n_blocks=args.n_blocks, mid_ch=args.mid_channels)
-    elif name == "willnet_se_plus":
-        model = WillNetSEPlus(
-            in_channels=1,
-            out_channels=1,
-            mid_channels=args.mid_channels,
-            n_blocks=args.n_blocks,
-            upscale=2,
-        )
+        model = WillNetSEDeep(n_blocks=args.n_blocks, mid_channels=args.mid_channels)
     else:
         raise ValueError(f"Unknown model {name}")
     return model.to(device)
@@ -124,6 +109,20 @@ class Evaluator:
         ckpt = torch.load(path, map_location=self.device)
         self.model.load_state_dict(ckpt["model_state_dict"])
         print(f"Model weights loaded from {path}")
+
+        # ckpt = torch.load(path, map_location=self.device)
+        # state_dict = ckpt["model_state_dict"]
+        
+        # new_state_dict = {}
+        # for key, value in state_dict.items():
+        #     if key.startswith("blocks."):
+        #         new_key = key.replace("blocks.", "body.")
+        #         new_state_dict[new_key] = value
+        #     else:
+        #         new_state_dict[key] = value
+        
+        # self.model.load_state_dict(new_state_dict)
+        # print(f"Model weights loaded from {path} (with key renaming)")
 
     # ----------------------------------------------------------------------
     @torch.no_grad()
@@ -181,6 +180,21 @@ class Evaluator:
         np.save(self.out_dir / "err_interp.npy", np.abs(hr_np - lr_np) * 5)
         np.save(self.out_dir / "err_sr.npy", np.abs(hr_np - sr_np) * 5)
         print(f"Saved visual sample to {cmp_path}")
+
+        import csv
+        
+        def save_as_csv(arr, name):
+            csv_path = self.out_dir / f"{name}_{self.run_stamp}.csv"
+            with open(csv_path, 'w', newline='') as csvfile:
+                writer = csv.writer(csvfile)
+                for row in arr:
+                    writer.writerow(row)
+        
+        save_as_csv(lr_np, "lr_up_matrix")
+        save_as_csv(sr_np, "sr_matrix")
+        save_as_csv(hr_np, "hr_matrix")
+        save_as_csv(np.abs(hr_np - lr_np) * 5, "err_interp_matrix")
+        save_as_csv(np.abs(hr_np - sr_np) * 5, "err_sr_matrix")
 
     # ----------------------------------------------------------------------
     @staticmethod
