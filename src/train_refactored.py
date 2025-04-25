@@ -44,8 +44,6 @@ def build_arg_parser() -> argparse.ArgumentParser:
     p.add_argument("--mid_channels", type=int, default=48, help="Width for SEPlus")
     p.add_argument("--n_blocks", type=int, default=8, help="#ResBlocks for SEPlus")
     p.add_argument("--patience", type=int, default=20, help="Early-stop patience")
-    p.add_argument("--step_size", type=int, default=30, help="LR StepLR period")
-    p.add_argument("--gamma_lr", type=float, default=0.5, help="LR decay factor")
     return p
 
 # ---------------------------------------------------------------------------
@@ -97,9 +95,6 @@ class Trainer:
         # Model/optim --------------------------------------------------------
         self.model = build_model(args.model, self.device, args)
         self.optimizer = optim.Adam(self.model.parameters(), lr=args.lr)
-        # self.scheduler = optim.lr_scheduler.StepLR(
-        #     self.optimizer, step_size=args.step_size, gamma=args.gamma_lr
-        # )
         self.scheduler = optim.lr_scheduler.CosineAnnealingLR(
             self.optimizer, T_max=args.epochs, eta_min=args.lr * 0.1
         )
@@ -240,6 +235,8 @@ class Trainer:
 def main():
     args = build_arg_parser().parse_args()
     trainer = Trainer(args)
+    # from config import Config
+    # trainer = Trainer(Config.load(cfg_path))
     trainer.fit()
 
 

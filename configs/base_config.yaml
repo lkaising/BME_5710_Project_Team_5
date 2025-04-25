@@ -1,30 +1,52 @@
-# =============================================
-# MRI Super-Resolution Base Configuration
-# =============================================
+# ============================================================================
+# MRI Super-Resolution · BASE CONFIG
+# All experiment-specific YAML files simply `parent:` this one and override
+# what they need.
+# ============================================================================
 
-# Data paths
-data_dir: "./data"
-transforms_config: "./configs/transforms.yaml"
+# ---------------------------------------------------------------------------
+# 0. Runtime / device
+device:
+  use_cuda: true            # the notebook still picks CPU automatically if no GPU
 
-# Hardware settings
-num_workers: 4
-use_cuda: true
+# ---------------------------------------------------------------------------
+# 1. Data
+data:
+  dir: "./data"             # root folder that contains train/ and val/ splits
+  transforms: "./configs/transforms.yaml"
+  workers: 4
 
-# Model configuration
-model_params:
+# ---------------------------------------------------------------------------
+# 2. Model (architecture-specific hyper-params live here)
+model:
+  name: "willnet"           # ("willnet", "willnet_se_deep", …)
   in_channels: 1
-  out_channels: 1
-  
-# Training configuration
-training:
-  batch_size: 5
-  learning_rate: 1e-3
-  epochs: 10
-  gamma: 0.5
-  
-# Validation configuration
-validation:
+  out_channels: 1           # ↳ both optional for most nets
+  mid_channels: 48          # ↳ used only by *_se* variants
+  n_blocks: 8               # ↳   "
+
+# ---------------------------------------------------------------------------
+# 3. Training
+train:
+  batch_size: 4
+  epochs: 100
+  lr: 1e-4                  # keep short key **lr** (matches Trainer arg)
+  gamma: 0.5                # MSE : SSIM blend
+  patience: 20              # early-stop
+  step_size: 30             # if you use StepLR
+  gamma_lr: 0.5             # LR decay factor
+  log_interval: 10
+  output_dir: "./checkpoints"
+
+# ---------------------------------------------------------------------------
+# 4. Evaluation
+eval:
   batch_size: 1
-  
-# Logging configuration
-log_interval: 10
+  save_visual: true
+  output_dir: "./results"
+
+# ---------------------------------------------------------------------------
+# 5. Inference
+inference:
+  input_dir: "./data/val/low-res"
+  output_dir: "./results/inference"

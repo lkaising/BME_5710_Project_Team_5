@@ -1,0 +1,80 @@
+<svg viewBox="0 0 800 500" xmlns="http://www.w3.org/2000/svg">
+  <!-- Background -->
+  <rect width="800" height="500" fill="#f8f9fa" rx="10" ry="10"/>
+  
+  <!-- Title -->
+  <text x="400" y="30" font-family="Arial" font-size="24" text-anchor="middle" font-weight="bold">WillNet Architecture for MRI Super-Resolution</text>
+  
+  <!-- Input -->
+  <rect x="50" y="100" width="80" height="80" fill="#c5e1a5" stroke="#558b2f" stroke-width="2" rx="5" ry="5"/>
+  <text x="90" y="145" font-family="Arial" font-size="14" text-anchor="middle">Input MRI</text>
+  <text x="90" y="165" font-family="Arial" font-size="12" text-anchor="middle">[B, 1, H, W]</text>
+  
+  <!-- Head Network -->
+  <rect x="180" y="85" width="120" height="110" fill="#bbdefb" stroke="#1976d2" stroke-width="2" rx="5" ry="5"/>
+  <text x="240" y="110" font-family="Arial" font-size="14" text-anchor="middle" font-weight="bold">Head</text>
+  <text x="240" y="130" font-family="Arial" font-size="12" text-anchor="middle">Conv(9×9, 64)</text>
+  <text x="240" y="150" font-family="Arial" font-size="12" text-anchor="middle">ReLU</text>
+  <text x="240" y="170" font-family="Arial" font-size="12" text-anchor="middle">Conv(5×5, 64)</text>
+  <text x="240" y="190" font-family="Arial" font-size="12" text-anchor="middle">ReLU</text>
+  
+  <!-- Body with SE Blocks -->
+  <rect x="350" y="85" width="220" height="110" fill="#ffcc80" stroke="#e65100" stroke-width="2" rx="5" ry="5"/>
+  <text x="460" y="110" font-family="Arial" font-size="14" text-anchor="middle" font-weight="bold">Body (10 SE-ResBlocks)</text>
+  
+  <!-- Single SE-ResBlock Detail -->
+  <rect x="370" y="120" width="80" height="65" fill="#ffecb3" stroke="#ffa000" stroke-width="1" rx="3" ry="3"/>
+  <text x="410" y="135" font-family="Arial" font-size="10" text-anchor="middle">Conv(3×3)</text>
+  <text x="410" y="150" font-family="Arial" font-size="10" text-anchor="middle">ReLU</text>
+  <text x="410" y="165" font-family="Arial" font-size="10" text-anchor="middle">Conv(3×3)</text>
+  <text x="410" y="180" font-family="Arial" font-size="10" text-anchor="middle">SE-Block</text>
+  
+  <!-- SE Block Detail -->
+  <rect x="460" y="120" width="90" height="65" fill="#e6ee9c" stroke="#afb42b" stroke-width="1" rx="3" ry="3"/>
+  <text x="505" y="135" font-family="Arial" font-size="10" text-anchor="middle">AvgPool</text>
+  <text x="505" y="150" font-family="Arial" font-size="10" text-anchor="middle">Conv(1×1)</text>
+  <text x="505" y="165" font-family="Arial" font-size="10" text-anchor="middle">ReLU→Conv(1×1)</text>
+  <text x="505" y="180" font-family="Arial" font-size="10" text-anchor="middle">Sigmoid</text>
+  
+  <!-- Tail Network -->
+  <rect x="620" y="85" width="120" height="110" fill="#ce93d8" stroke="#7b1fa2" stroke-width="2" rx="5" ry="5"/>
+  <text x="680" y="140" font-family="Arial" font-size="14" text-anchor="middle" font-weight="bold">Tail</text>
+  <text x="680" y="160" font-family="Arial" font-size="12" text-anchor="middle">Conv(5×5, 1)</text>
+  
+  <!-- Output -->
+  <rect x="670" y="235" width="80" height="80" fill="#ef9a9a" stroke="#c62828" stroke-width="2" rx="5" ry="5"/>
+  <text x="710" y="280" font-family="Arial" font-size="14" text-anchor="middle">Output</text>
+  <text x="710" y="300" font-family="Arial" font-size="12" text-anchor="middle">[B, 1, H, W]</text>
+  
+  <!-- Connection Lines -->
+  <line x1="130" y1="140" x2="180" y2="140" stroke="#333" stroke-width="2"/>
+  <line x1="300" y1="140" x2="350" y2="140" stroke="#333" stroke-width="2"/>
+  <line x1="570" y1="140" x2="620" y2="140" stroke="#333" stroke-width="2"/>
+  <line x1="680" y1="195" x2="680" y2="235" stroke="#333" stroke-width="2"/>
+  
+  <!-- Global Residual Connection -->
+  <path d="M 130,140 C 150,140 150,350 400,350 C 650,350 650,275 670,275" fill="none" stroke="#d32f2f" stroke-width="3" stroke-dasharray="5,5"/>
+  <text x="400" y="380" font-family="Arial" font-size="14" text-anchor="middle" fill="#d32f2f">Global Residual Connection</text>
+  
+  <!-- Gradient Checkpointing Note -->
+  <text x="400" y="420" font-family="Arial" font-size="14" text-anchor="middle" font-style="italic">Uses gradient checkpointing to reduce memory usage during training</text>
+  
+  <!-- Legend -->
+  <rect x="50" y="440" width="15" height="15" fill="#c5e1a5" stroke="#558b2f" stroke-width="1"/>
+  <text x="75" y="452" font-family="Arial" font-size="12" text-anchor="start">Input/Output</text>
+  
+  <rect x="150" y="440" width="15" height="15" fill="#bbdefb" stroke="#1976d2" stroke-width="1"/>
+  <text x="175" y="452" font-family="Arial" font-size="12" text-anchor="start">Head Network</text>
+  
+  <rect x="275" y="440" width="15" height="15" fill="#ffcc80" stroke="#e65100" stroke-width="1"/>
+  <text x="300" y="452" font-family="Arial" font-size="12" text-anchor="start">Body Network</text>
+  
+  <rect x="400" y="440" width="15" height="15" fill="#ce93d8" stroke="#7b1fa2" stroke-width="1"/>
+  <text x="425" y="452" font-family="Arial" font-size="12" text-anchor="start">Tail Network</text>
+  
+  <rect x="525" y="440" width="15" height="15" fill="#e6ee9c" stroke="#afb42b" stroke-width="1"/>
+  <text x="550" y="452" font-family="Arial" font-size="12" text-anchor="start">SE-Block</text>
+  
+  <line x1="650" y1="447" x2="675" y2="447" stroke="#d32f2f" stroke-width="2" stroke-dasharray="3,3"/>
+  <text x="685" y="452" font-family="Arial" font-size="12" text-anchor="start">Residual Connection</text>
+</svg>
