@@ -47,8 +47,8 @@ def build_arg_parser() -> argparse.ArgumentParser:
         "unet", "willnet", "willnet_se", "willnet_se_plus", "willnet_se_deep"
     ], help="Model architecture")
     p.add_argument("--batch_size", type=int, default=1, help="Batch size for evaluation")
-    p.add_argument("--mid_channels", type=int, default=48, help="Width for SEPlus / SEDeep (when needed)")
-    p.add_argument("--n_blocks", type=int, default=8, help="#ResBlocks for SEDeep")
+    p.add_argument("--mid_channels", type=int, default=64, help="Width for SEPlus / SEDeep (when needed)")
+    p.add_argument("--n_blocks", type=int, default=10, help="#ResBlocks for SEDeep")
     p.add_argument("--num_workers", type=int, default=4, help="DataLoader workers")
     p.add_argument("--save_visual", action="store_true", help="Save LR/SR/HR PNG of first batch")
     return p
@@ -110,19 +110,6 @@ class Evaluator:
         self.model.load_state_dict(ckpt["model_state_dict"])
         print(f"Model weights loaded from {path}")
 
-        # ckpt = torch.load(path, map_location=self.device)
-        # state_dict = ckpt["model_state_dict"]
-        
-        # new_state_dict = {}
-        # for key, value in state_dict.items():
-        #     if key.startswith("blocks."):
-        #         new_key = key.replace("blocks.", "body.")
-        #         new_state_dict[new_key] = value
-        #     else:
-        #         new_state_dict[key] = value
-        
-        # self.model.load_state_dict(new_state_dict)
-        # print(f"Model weights loaded from {path} (with key renaming)")
 
     # ----------------------------------------------------------------------
     @torch.no_grad()

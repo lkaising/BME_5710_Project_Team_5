@@ -24,7 +24,7 @@ class SEBlock(nn.Module):
 
         SE_KERNEL_SIZE = 1
         
-        self.fc = nn.Sequential(
+        self.conv = nn.Sequential(
             nn.AdaptiveAvgPool2d(1),
             nn.Conv2d(
                 in_channels=channels,
@@ -44,7 +44,7 @@ class SEBlock(nn.Module):
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """Forward pass of the SE block."""
-        return x * self.fc(x)
+        return x * self.conv(x)
 
    
 class SEResBlock(nn.Module):

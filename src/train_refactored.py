@@ -126,6 +126,9 @@ class Trainer:
         for lr_img, hr_img in iterator:
             lr_img, hr_img = lr_img.to(self.device), hr_img.to(self.device)
 
+            if train:
+                self.optimizer.zero_grad(set_to_none=True)
+
             with autocast(device_type="cuda", enabled=self.device.type == "cuda"):
                 sr_img = self._forward_pass(lr_img, self.args.model.lower())
                 loss = combined_loss(sr_img, hr_img, self.args.gamma)
@@ -134,9 +137,9 @@ class Trainer:
                 self.scaler.scale(loss).backward()
                 self.scaler.step(self.optimizer)
                 self.scaler.update()
-                self.optimizer.zero_grad(set_to_none=True)
 
             total_loss += loss.item()
+
             if not train:
                 batch_metrics = evaluate_metrics(sr_img, hr_img)
                 for k, v in batch_metrics.items():
@@ -149,17 +152,22 @@ class Trainer:
 
     # ---------------------------------------------------------------------
     # Checkpoint -----------------------------------------------------------
-    def _save_checkpoint(self, epoch: int, val_loss: float, metrics: Dict[str, float]):
+    def _save_checkpoint(self, epoch: int, val_loss: float, metrics: Dict[str, float], is_best: bool):
         ckpt = {
             "epoch": epoch,
             "model_state_dict": self.model.state_dict(),
             "optimizer_state_dict": self.optimizer.state_dict(),
+            "scheduler_state_dict": self.scheduler.state_dict(),
             "loss": val_loss,
             "metrics": metrics,
         }
-        fname = self.output_dir / f"{self.args.model}_epoch_{epoch}_test.pth"
+        fname = self.output_dir / f"{self.args.model}_epoch_{epoch}.pth"
         torch.save(ckpt, fname)
-        print(f"Checkpoint saved: {fname}")
+
+        if is_best:
+            best_path = self.output_dir / f"{self.args.model}_best.pth"
+            torch.save(ckpt, best_path)
+            print(f"🥇  New best model saved to {best_path}")
 
     def _load_checkpoint(self, path: str | Path):
         ckpt = torch.load(path, map_location=self.device)
@@ -198,9 +206,12 @@ class Trainer:
             if is_best:
                 self.best_loss = val_loss
                 patience_counter = 0
-                self._save_checkpoint(epoch, val_loss, val_metrics)
+                self._save_checkpoint(epoch, val_loss, val_metrics, is_best=True)
             else:
                 patience_counter += 1
+                # still keep a snapshot every N epochs if you like
+                if epoch % 10 == 0:
+                    self._save_checkpoint(epoch, val_loss, val_metrics, is_best=False)
 
             if patience_counter >= self.args.patience:
                 print("Early stopping triggered.")
