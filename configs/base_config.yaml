@@ -15,6 +15,7 @@ data:
   dir: "./data"             # root folder that contains train/ and val/ splits
   transforms: "./configs/transforms.yaml"
   workers: 4
+  preview_batch: 1
 
 # ---------------------------------------------------------------------------
 # 2. Model (architecture-specific hyper-params live here)
@@ -33,9 +34,6 @@ train:
   lr: 1e-4                  # keep short key **lr** (matches Trainer arg)
   gamma: 0.5                # MSE : SSIM blend
   patience: 20              # early-stop
-  step_size: 30             # if you use StepLR
-  gamma_lr: 0.5             # LR decay factor
-  log_interval: 10
   output_dir: "./checkpoints"
 
 # ---------------------------------------------------------------------------
@@ -45,8 +43,3 @@ eval:
   save_visual: true
   output_dir: "./results"
 
-# ---------------------------------------------------------------------------
-# 5. Inference
-inference:
-  input_dir: "./data/val/low-res"
-  output_dir: "./results/inference"

@@ -1,22 +1,25 @@
-# Experiment-specific overrides
-parent: "../base.yaml"
+# configs/experiments/willnet.yaml
+# Experiment-specific overrides for willnet_se_deep
 
 model:
-  name: "willnet_se_deep"
-  mid_channels: 64          # wider body
+  name: willnet_se_deep
+  mid_channels: 64
   n_blocks: 10
 
 train:
   epochs: 250
-  lr: 2e-4
+  lr:  0.0002
   gamma: 0.6
   batch_size: 4
-  patience: 30              # give the deeper net more time
-
-# Optional: experiment-specific checkpoints or log folders
-train:
-  <<: *train                # merge with the keys above
-  output_dir: "checkpoints/willnet_se_deep_run1"
+  patience: 30
+  output_dir: "checkpoints/willnet_run"
+  model: "willnet_se_deep"
+  mid_channels: 64
+  n_blocks: 10
+  checkpoint: null
 
 eval:
-  output_dir: "results/willnet_se_deep_run1"
+  output_dir: "results/willnet_run"
+  model: "willnet_se_deep"
+  mid_channels: 64
+  n_blocks: 10

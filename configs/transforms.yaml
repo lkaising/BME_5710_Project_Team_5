@@ -60,3 +60,7 @@ val:
   transforms:
     # Validation-specific transforms can override global settings here
     # By default, uses global transforms defined above
+
+test:
+  apply_transforms: true
+  transforms:

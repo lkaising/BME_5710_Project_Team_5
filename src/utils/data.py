@@ -210,13 +210,13 @@ def create_dataloaders(
     if loader_to_create is None:
         return None
     
-    valid_options = ['train', 'val', 'both']
+    valid_options = ['train', 'val', 'test', 'both', 'all']
     if loader_to_create not in valid_options:
         raise ValueError(f"loader_to_create must be one of {valid_options}")
     
     loaders = {}
     
-    if loader_to_create in ['train', 'both']:
+    if loader_to_create in ['train', 'both', 'all']:
         train_cfg = _read_transform_config(config_path, section='train')
         geo, px_lr, px_hr = _create_transforms_from_config(train_cfg)
 
@@ -234,7 +234,7 @@ def create_dataloaders(
             is_train=True
         )
     
-    if loader_to_create in ['val', 'both']:
+    if loader_to_create in ['val', 'both', 'all']:
         val_cfg = _read_transform_config(config_path, section='val')
         geo, px_lr, px_hr = _create_transforms_from_config(val_cfg)
 
@@ -251,11 +251,31 @@ def create_dataloaders(
             crop_size=crop_size,
             is_train=False
         )
+
+    if loader_to_create in ['test', 'all']:
+        test_cfg = _read_transform_config(config_path, section='test')
+        geo, px_lr, px_hr = _create_transforms_from_config(test_cfg)
+
+        crop_size = None
+        if test_cfg and 'crop_size' in test_cfg:
+            crop_size = test_cfg['crop_size']
+
+        loaders['test'] = _create_dataloader_from_dir(
+            str(Path(data_dir) / 'test'),
+            batch_size, 
+            num_workers, 
+            _PairTransform(geo, px_lr, px_hr), 
+            shuffle=False,
+            crop_size=crop_size,
+            is_train=False
+        )
     
     return_mapping = {
         'both': lambda: (loaders['train'], loaders['val']),
         'train': lambda: loaders['train'],
-        'val': lambda: loaders['val']
+        'val': lambda: loaders['val'],
+        'test': lambda: loaders['test'],
+        'all': lambda: (loaders['train'], loaders['val'], loaders['test'])
     }
 
     return return_mapping[loader_to_create]()

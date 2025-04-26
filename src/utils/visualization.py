@@ -216,3 +216,41 @@ def create_grid(images, nrow=8, padding=2):
         grid = grid.squeeze(0)
     
     return grid
+
+# def show_sample(loader, title):
+#     lr, hr = next(iter(loader))
+#     plt.figure(figsize=(6,3))
+#     plt.subplot(1,2,1); plt.imshow(lr[0,0], cmap='gray'); plt.title('LR'); plt.axis('off')
+#     plt.subplot(1,2,2); plt.imshow(hr[0,0], cmap='gray'); plt.title('HR'); plt.axis('off')
+#     plt.suptitle(title); plt.show()
+
+def show_sample(batch, title):
+    """
+    Displays the low-resolution (LR) and high-resolution (HR) images
+    from a given batch.
+
+    Args:
+        batch: A tuple or list containing (lr_tensor, hr_tensor).
+               Assumes tensors have shape (batch_size, channels, height, width).
+        title: The title for the plot window.
+    """
+    lr, hr = batch
+
+    lr_img = lr[0].squeeze().detach().cpu().numpy()
+    hr_img = hr[0].squeeze().detach().cpu().numpy()
+
+    plt.figure(figsize=(6, 3))
+
+    plt.subplot(1, 2, 1)
+    plt.imshow(lr_img, cmap='gray') 
+    plt.title('Low Resolution (LR)', fontsize=12)
+    plt.axis('off') 
+
+    plt.subplot(1, 2, 2)
+    plt.imshow(hr_img, cmap='gray') 
+    plt.title('High Resolution (HR)', fontsize=12)
+    plt.axis('off')
+
+    plt.suptitle(title, fontsize=14)
+    plt.tight_layout(rect=[0, 0.03, 1, 0.98]) 
+    plt.show()
