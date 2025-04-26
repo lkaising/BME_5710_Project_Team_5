@@ -90,6 +90,12 @@ class Evaluator:
 
         # I/O ----------------------------------------------------------------
         self.out_dir = Path(args.output_dir)
+        if self.out_dir.exists():
+            for item in self.out_dir.iterdir():
+                if item.is_file() or item.is_symlink():
+                    item.unlink()
+                else:
+                    shutil.rmtree(item)
         self.out_dir.mkdir(parents=True, exist_ok=True)
         self.run_stamp = time.strftime("%Y%m%d_%H%M%S")
 
