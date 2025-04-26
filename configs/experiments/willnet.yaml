@@ -19,7 +19,7 @@ train:
   checkpoint: null
 
 eval:
-  output_dir: "results/willnet_run"
+  output_dir: "results/willnet_run_test"
   model: "willnet_se_deep"
   mid_channels: 64
   n_blocks: 10

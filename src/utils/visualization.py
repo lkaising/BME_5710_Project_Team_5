@@ -12,72 +12,45 @@ from PIL import Image
 import torch
 
 
-def plot_comparison(lr_img, sr_img, hr_img, save_path=None):
+def plot_comparison(lr_img, sr_will, sr_triv, hr_img, save_path=None):
     """
-    Plot low-res, super-res, and high-res images side by side with error maps.
-    
-    Args:
-        lr_img (np.ndarray): Low-resolution image (upsampled to high-res size)
-        sr_img (np.ndarray): Super-resolution image
-        hr_img (np.ndarray): High-resolution ground truth image
-        save_path (str, optional): Path to save the plot
-        
-    Returns:
-        matplotlib.figure.Figure: Figure containing the plot
+    4-up image comparison + error maps with a shared colour-bar.
     """
-    # Ensure inputs are numpy arrays
-    if isinstance(lr_img, torch.Tensor):
-        lr_img = lr_img.squeeze().cpu().numpy()
-    if isinstance(sr_img, torch.Tensor):
-        sr_img = sr_img.squeeze().cpu().numpy()
-    if isinstance(hr_img, torch.Tensor):
-        hr_img = hr_img.squeeze().cpu().numpy()
-    
-    # Make sure all values are in [0, 1] range
-    lr_img = np.clip(lr_img, 0, 1)
-    sr_img = np.clip(sr_img, 0, 1)
-    hr_img = np.clip(hr_img, 0, 1)
-    
-    # Calculate error maps (scale by 5 for visibility)
-    error_lr = 5 * np.abs(hr_img - lr_img)
-    error_sr = 5 * np.abs(hr_img - sr_img)
-    
-    # Create plot
-    fig, ax = plt.subplots(2, 3, figsize=(15, 10))
-    
-    # Plot images
-    ax[0, 0].imshow(hr_img, cmap='gray', vmin=0, vmax=1)
-    ax[0, 0].set_title('Ground Truth (High-Res)')
-    ax[0, 0].axis('off')
-    
-    ax[0, 1].imshow(lr_img, cmap='gray', vmin=0, vmax=1)
-    ax[0, 1].set_title('Interpolated Low-Res')
-    ax[0, 1].axis('off')
-    
-    ax[0, 2].imshow(sr_img, cmap='gray', vmin=0, vmax=1)
-    ax[0, 2].set_title('Super-Resolved')
-    ax[0, 2].axis('off')
-    
-    # Plot error maps
-    ax[1, 0].imshow(np.zeros_like(hr_img), cmap='gray', vmin=0, vmax=1)
-    ax[1, 0].set_title('Reference (Zero Error)')
-    ax[1, 0].axis('off')
-    
-    ax[1, 1].imshow(error_lr, cmap='gray', vmin=0, vmax=1)
-    ax[1, 1].set_title('Error: Ground Truth - Interpolated (×5)')
-    ax[1, 1].axis('off')
-    
-    ax[1, 2].imshow(error_sr, cmap='gray', vmin=0, vmax=1)
-    ax[1, 2].set_title('Error: Ground Truth - Super-Resolved (×5)')
-    ax[1, 2].axis('off')
-    
-    plt.tight_layout()
-    
-    # Save the figure if path is provided
+    clip = lambda x: np.clip(
+        (x.squeeze().cpu().numpy() if isinstance(x, torch.Tensor) else x), 0, 1
+    )
+    lr_img, sr_will, sr_triv, hr_img = map(clip, (lr_img, sr_will, sr_triv, hr_img))
+
+    err_lr, err_will, err_triv = (5 * np.abs(hr_img - z) for z in (lr_img, sr_will, sr_triv))
+    vmax = np.quantile(np.concatenate([err_lr.ravel(), err_will.ravel(), err_triv.ravel()]), 0.99)
+
+    fig, ax = plt.subplots(
+        2, 4, figsize=(16, 8),
+        constrained_layout=True,
+        gridspec_kw=dict(height_ratios=[1, 1])
+    )
+
+    titles = ["Ground Truth (HR)", "LR ↑ (bicubic)", "WillNet SR", "TrivialNet SR"]
+    for i, (im, t) in enumerate(zip((hr_img, lr_img, sr_will, sr_triv), titles)):
+        ax[0, i].imshow(im, cmap="gray", vmin=0, vmax=1)
+        ax[0, i].set_title(t, fontsize=13, fontweight="bold")
+        ax[0, i].axis("off")
+
+    err_maps   = [np.zeros_like(hr_img), err_lr, err_will, err_triv]
+    err_titles = ["zero error", "|HR−LR| ×5", "|HR−Will| ×5", "|HR−Triv| ×5"]
+
+    for i, (e, t) in enumerate(zip(err_maps, err_titles)):
+        im = ax[1, i].imshow(e, cmap="magma", vmin=0, vmax=vmax)
+        ax[1, i].set_title(t, fontsize=11)
+        ax[1, i].axis("off")
+
+    cbar = fig.colorbar(im, ax=ax.ravel().tolist(), fraction=0.025, pad=0.02)
+    cbar.set_label("absolute error ×5", rotation=90, labelpad=12)
+
     if save_path:
         os.makedirs(os.path.dirname(save_path), exist_ok=True)
-        plt.savefig(save_path, dpi=300, bbox_inches='tight')
-    
+        fig.savefig(save_path, dpi=300, bbox_inches="tight")
+
     return fig
 
 

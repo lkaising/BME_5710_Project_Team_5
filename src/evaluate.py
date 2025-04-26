@@ -25,11 +25,13 @@ import numpy as np
 import torch
 import torch.nn.functional as F
 import yaml
+import shutil  
 from torch.amp import autocast
 from tqdm import tqdm
 from tabulate import tabulate
 
 from models import (
+    TrivialNet,
     WillNet,
     WillNetSEDeep,
     combined_loss,  # not used here but keeps IDE import grouping consistent
@@ -54,6 +56,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
     p.add_argument("--n_blocks", type=int, default=10, help="#ResBlocks for SEDeep")
     p.add_argument("--num_workers", type=int, default=4, help="DataLoader workers")
     p.add_argument("--save_visual", action="store_true", help="Save LR/SR/HR PNG of first batch")
+    p.add_argument("--split",      type=str, default="test", choices=["train", "val", "test"], help="Which dataset partition to evaluate on")
     return p
 
 
@@ -97,7 +100,7 @@ class Evaluator:
         self.loader = create_dataloaders(
             data_dir=str(data_dir),
             config_path=transforms_cfg,
-            loader_to_create="test",
+            loader_to_create=args.split,
             batch_size=args.batch_size,
             num_workers=cfg.get("num_workers", 4),
         )
@@ -106,6 +109,16 @@ class Evaluator:
         self.model = build_model(args.model, self.device, args)
         self._load_checkpoint(args.checkpoint)
         self.model.eval()
+        # ------- learned-baseline (TrivialNet) ---------------------------
+        self.baseline = TrivialNet().to(self.device)
+        triv_ckpt = Path("checkpoints/trivialnet/best.pth")
+        if triv_ckpt.exists():
+            self.baseline.load_state_dict(torch.load(triv_ckpt, map_location=self.device)["model"])
+            self.baseline.eval()
+        else:
+            raise FileNotFoundError(
+                "TrivialNet checkpoint not found"
+            )
 
     # ----------------------------------------------------------------------
     def _load_checkpoint(self, path: str | Path):
@@ -117,102 +130,139 @@ class Evaluator:
     # ----------------------------------------------------------------------
     @torch.no_grad()
     def run(self) -> Dict[str, Dict[str, float]]:
-        tot_interp, tot_sr = {"psnr": 0.0, "ssim": 0.0}, {"psnr": 0.0, "ssim": 0.0}
+        # totals ----------------------------------------------------------------
+        tot_bic  = {"psnr": 0.0, "ssim": 0.0}
+        tot_triv = {"psnr": 0.0, "ssim": 0.0}
+        tot_will = {"psnr": 0.0, "ssim": 0.0}
 
         iterator = tqdm(self.loader, desc="Evaluating", leave=False)
         for b_idx, (lr_img, hr_img) in enumerate(iterator):
             lr_img, hr_img = lr_img.to(self.device), hr_img.to(self.device)
 
+            # forward --------------------------------------------------------
             with autocast(device_type="cuda", enabled=self.device.type == "cuda"):
-                lr_up = F.interpolate(lr_img, scale_factor=2, mode="bicubic", align_corners=False)
-                sr_img = self.model(lr_up if self.args.model != "willnet_se_plus" else lr_img)
+                lr_up     = F.interpolate(lr_img, scale_factor=2, mode="bicubic",
+                                        align_corners=False)          # bicubic ↑
+                triv_img  = self.baseline(lr_up)                         # TrivialNet
+                will_img  = self.model(lr_up if self.args.model != "willnet_se_plus"
+                                    else lr_img)                      # WillNet
 
-            # Metrics -----------------------------------------------------
-            m_interp = evaluate_metrics(lr_up, hr_img)
-            m_sr = evaluate_metrics(sr_img, hr_img)
-            for k in tot_interp:
-                tot_interp[k] += m_interp[k]
-                tot_sr[k] += m_sr[k]
+            # metrics -------------------------------------------------------
+            m_bic  = evaluate_metrics(lr_up , hr_img)
+            m_triv = evaluate_metrics(triv_img, hr_img)
+            m_will = evaluate_metrics(will_img, hr_img)
+            for k in tot_bic:
+                tot_bic [k] += m_bic [k]
+                tot_triv[k] += m_triv[k]
+                tot_will[k] += m_will[k]
 
-            # Save a single illustrative comparison ----------------------
+            # one illustrative figure --------------------------------------
             if self.args.save_visual and b_idx == 0:
-                self._save_visuals(lr_up, sr_img, hr_img)
+                self._save_visuals(lr_up, will_img, triv_img, hr_img)
 
-        # Averages ----------------------------------------------------------
-        n = len(self.loader)
-        avg_interp = {k: v / n for k, v in tot_interp.items()}
-        avg_sr = {k: v / n for k, v in tot_sr.items()}
-        improvement = {k: avg_sr[k] - avg_interp[k] for k in avg_sr}
+        # averages -------------------------------------------------------------
+        n           = len(self.loader)
+        avg_bic     = {k: v / n for k, v in tot_bic .items()}
+        avg_triv    = {k: v / n for k, v in tot_triv.items()}
+        avg_will    = {k: v / n for k, v in tot_will.items()}
+        imp_vs_bic  = {k: avg_will[k] - avg_bic [k] for k in avg_will}
+        imp_vs_triv = {k: avg_will[k] - avg_triv[k] for k in avg_will}
 
-        results = {"interpolated": avg_interp, "super_resolved": avg_sr, "improvement": improvement}
+        results = {
+            "bicubic"       : avg_bic,
+            "trivialnet"    : avg_triv,
+            "willnet"       : avg_will,
+            "imp_vs_bicubic": imp_vs_bic,
+            "imp_vs_trivial": imp_vs_triv,
+        }
+
         results_path = self.out_dir / f"evaluation_{self.run_stamp}.json"
         with open(results_path, "w") as f:
             json.dump(results, f, indent=4)
-        # print(f"\nEvaluation complete ✔  Metrics saved to {results_path}")
+
         self._pretty_print(results)
         return results
 
     # ----------------------------------------------------------------------
-    def _save_visuals(self, lr_up: torch.Tensor, sr: torch.Tensor, hr: torch.Tensor):
-        """Save LR↑, SR, HR and error maps for the first item in batch 0."""
-        lr_np = lr_up[0].squeeze().cpu().numpy()
-        sr_np = sr[0].squeeze().cpu().numpy()
-        hr_np = hr[0].squeeze().cpu().numpy()
+    def _save_visuals(
+        self,
+        lr_up   : torch.Tensor,
+        sr_will : torch.Tensor,
+        sr_triv : torch.Tensor,
+        hr      : torch.Tensor
+    ):
+        """
+        Save LR↑, WillNet-SR, TrivialNet-SR, HR and their error maps for the
+        first item in batch 0.
+        """
+        # tensors → numpy ---------------------------------------------------
+        lr_np   = lr_up  [0].squeeze().cpu().numpy()
+        will_np = sr_will[0].squeeze().cpu().numpy()
+        triv_np = sr_triv[0].squeeze().cpu().numpy()
+        hr_np   = hr     [0].squeeze().cpu().numpy()
 
-        # Comparison PNG -------------------------------------------------
+        # figure ------------------------------------------------------------
         cmp_path = self.out_dir / f"comparison_{self.run_stamp}.png"
-        plot_comparison(lr_np, sr_np, hr_np, save_path=str(cmp_path))
+        plot_comparison(lr_np, will_np, triv_np, hr_np, save_path=str(cmp_path))
 
-        # NPY dumps ------------------------------------------------------
-        np.save(self.out_dir / "lr_up.npy", lr_np)
-        np.save(self.out_dir / "sr.npy", sr_np)
-        np.save(self.out_dir / "hr.npy", hr_np)
-        np.save(self.out_dir / "err_interp.npy", np.abs(hr_np - lr_np) * 5)
-        np.save(self.out_dir / "err_sr.npy", np.abs(hr_np - sr_np) * 5)
-        # print(f"Saved visual sample to {cmp_path}")
+        # numpy dumps -------------------------------------------------------
+        np.save(self.out_dir / "lr_up.npy"      , lr_np  )
+        np.save(self.out_dir / "sr_will.npy"    , will_np)
+        np.save(self.out_dir / "sr_triv.npy"    , triv_np)
+        np.save(self.out_dir / "hr.npy"         , hr_np  )
+        np.save(self.out_dir / "err_bic.npy"    , np.abs(hr_np - lr_np  ) * 5)
+        np.save(self.out_dir / "err_will.npy"   , np.abs(hr_np - will_np) * 5)
+        np.save(self.out_dir / "err_triv.npy"   , np.abs(hr_np - triv_np) * 5)
 
-        import csv
-        
-        def save_as_csv(arr, name):
-            csv_path = self.out_dir / f"{name}_{self.run_stamp}.csv"
-            with open(csv_path, 'w', newline='') as csvfile:
-                writer = csv.writer(csvfile)
-                for row in arr:
-                    writer.writerow(row)
-        
-        save_as_csv(lr_np, "lr_up_matrix")
-        save_as_csv(sr_np, "sr_matrix")
-        save_as_csv(hr_np, "hr_matrix")
-        save_as_csv(np.abs(hr_np - lr_np) * 5, "err_interp_matrix")
-        save_as_csv(np.abs(hr_np - sr_np) * 5, "err_sr_matrix")
+        # CSV versions ------------------------------------------------------
+        import csv, itertools
+        def save_csv(arr, name):
+            path = self.out_dir / f"{name}_{self.run_stamp}.csv"
+            with open(path, "w", newline="") as f:
+                writer = csv.writer(f)
+                writer.writerows(arr)
+
+        save_csv(lr_np , "lr_up_matrix")
+        save_csv(will_np, "sr_will_matrix")
+        save_csv(triv_np, "sr_triv_matrix")
+        save_csv(hr_np , "hr_matrix")
+        save_csv(np.abs(hr_np - lr_np  ) * 5, "err_bic_matrix")
+        save_csv(np.abs(hr_np - will_np) * 5, "err_will_matrix")
+        save_csv(np.abs(hr_np - triv_np) * 5, "err_triv_matrix")
 
     # ----------------------------------------------------------------------
     @staticmethod
-    def _pretty_print(res: Dict[str, Dict[str, float]]):
-        # interp, sr, imp = res["interpolated"], res["super_resolved"], res["improvement"]
-        # print(
-        #     f"\n{'Metric':<15}{'Bicubic (↑)':>15}{'Super-Res':>15}{'ΔSR-Bicubic':>15}"
-        #     f"\n{'-'*60}"
-        # )
-        # for k in ["psnr", "ssim"]:
-        #     print(f"{k.upper():<15}{interp[k]:>15.4f}{sr[k]:>15.4f}{imp[k]:>15.4f}")
-        """Display metrics using the tabulate library for clean formatting."""
-        interp = res["interpolated"]
-        sr = res["super_resolved"]
-        imp = res["improvement"]
-        
+    def _pretty_print(res: Dict[str, Dict[str, float]]) -> None:
+        """
+        Console table showing Bicubic, TrivialNet, and WillNet metrics plus
+        WillNet’s improvements over both baselines.
+        """
+        from tabulate import tabulate
+
         metrics = ["psnr", "ssim"]
-        headers = ["Metric", "Bicubic (↑)", "Super-Res (↑)", "Improvement"]
-        
+        headers = [
+            "Metric",
+            "Bicubic (↑)",
+            "TrivialNet (↑)",
+            "WillNet (↑)",
+            "ΔWill-Bic",
+            "ΔWill-Triv",
+        ]
+
         rows = []
-        for metric in metrics:
+        for m in metrics:
+            bic   = res["bicubic"][m]
+            triv  = res["trivialnet"][m]
+            will  = res["willnet"][m]
             rows.append([
-                metric.upper(),
-                f"{interp[metric]:.4f}",
-                f"{sr[metric]:.4f}",
-                f"{imp[metric]:+.4f}"
+                m.upper(),
+                f"{bic:.4f}",
+                f"{triv:.4f}",
+                f"{will:.4f}",
+                f"{will - bic:+.4f}",
+                f"{will - triv:+.4f}",
             ])
-        
+
         print(tabulate(rows, headers=headers, tablefmt="simple"))
 
 
